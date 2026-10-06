@@ -1,0 +1,8 @@
+[
+  { "wait": "OmO" },
+  { "wait": "[Extensions]" },
+  { "mark": "ready" },
+  { "send": "/where-dump\r" },
+  { "wait": "where-dump wrote" },
+  { "shot": "dumped" }
+]
