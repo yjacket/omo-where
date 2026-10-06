@@ -13,6 +13,19 @@ mock.module("@code-yeongyu/senpi", () => {
 	return senpiMembers;
 });
 
+/** When true the mocked report builder rejects, standing in for a scan that fails mid-session. */
+let reportThrows = false;
+// ?real=1 keeps the real builder reachable; the mock delegates to it unless the flag is set, so other
+// test files in this process that import report.ts still see real behavior.
+const realReport = await import("../extension/omo-where/report.ts?real=1");
+mock.module("../extension/omo-where/report.ts", () => ({
+	...realReport,
+	buildReport: async (...args: Parameters<typeof realReport.buildReport>) => {
+		if (reportThrows) throw new Error("scan boom");
+		return realReport.buildReport(...args);
+	},
+}));
+
 let counter = 0;
 async function loadIndex(): Promise<(pi: unknown) => void> {
 	counter += 1;
@@ -95,12 +108,29 @@ function harness(tree: Tree, extra: Record<string, unknown> = {}): Harness {
 let tree: Tree;
 beforeEach(() => {
 	failImport = false;
+	reportThrows = false;
 	externalEditor = undefined;
 	if (savedVisual === undefined) delete process.env.VISUAL;
 	else process.env.VISUAL = savedVisual;
 	tree = makeTree({ "proj/AGENTS.md": "rules", "agent": null });
 });
-afterEach(() => tree.cleanup());
+afterEach(() => {
+	// The report mock is process-wide; clearing the flag leaves it delegating to the real builder for other files.
+	reportThrows = false;
+	tree.cleanup();
+});
+
+/** Resolves with the next hint handed to the view; install it before the key that must set the hint. */
+function nextHint(h: Harness): Promise<string> {
+	return new Promise<string>((resolve) => {
+		const view = h.view();
+		const original = view.setHint.bind(view);
+		view.setHint = (text: string) => {
+			original(text);
+			resolve(text);
+		};
+	});
+}
 
 /** Waits until the overlay factory ran (the handler is still pending on it). */
 async function opened(h: Harness, run: Promise<void>): Promise<void> {
@@ -237,20 +267,46 @@ describe("/where entry", () => {
 		const h = harness(tree, { ...editCtx(), isIdle: () => true });
 		const run = options.handler("", h.ctx);
 		await opened(h, run);
-		const hinted = new Promise<string>((resolve) => {
-			const view = h.view();
-			const original = view.setHint.bind(view);
-			view.setHint = (text: string) => {
-				original(text);
-				resolve(text);
-			};
-		});
+		const hinted = nextHint(h);
 		pressEdit(h);
 		expect(h.tui.stops).toBe(1);
 		expect(h.tui.starts).toBe(1);
 		const hint = await hinted;
 		expect(hint).toBe("바뀐 내용은 /reload 후 적용");
 		expect(h.tui.renders).toBeGreaterThanOrEqual(2);
+		h.done();
+		await run;
+	});
+
+	test("a throwing isIdle sets the editor hint and handleInput never throws", async () => {
+		const { options } = await register();
+		const h = harness(tree, {
+			...editCtx(),
+			isIdle: () => {
+				throw new Error("idle boom");
+			},
+		});
+		const run = options.handler("", h.ctx);
+		await opened(h, run);
+		const hinted = nextHint(h);
+		expect(() => pressEdit(h)).not.toThrow();
+		expect(await hinted).toBe("편집기를 열 수 없음: idle boom");
+		expect(h.tui.stops).toBe(0);
+		expect(h.tui.starts).toBe(0);
+		h.done();
+		await run;
+	});
+
+	test("a rescan whose scan throws sets the rescan hint without an unhandled rejection", async () => {
+		const { options } = await register();
+		const h = harness(tree, editCtx());
+		const run = options.handler("", h.ctx);
+		await opened(h, run);
+		const hinted = nextHint(h);
+		reportThrows = true;
+		h.view().handleInput("r");
+		expect(await hinted).toBe("다시 읽지 못함: scan boom");
+		expect(h.notes).toEqual([]);
 		h.done();
 		await run;
 	});

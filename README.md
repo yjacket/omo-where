@@ -116,3 +116,7 @@ bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps qa/steps/smoke.json -
 ```
 
 Steps: `wait`, `waitNew` (only output after the last keypress), `idle`, `send`, `shot`, `mark`, `rm`. Type a slash command, `waitNew` for its autocomplete line, then send Enter; an early Enter can reach the agent as a prompt.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

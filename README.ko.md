@@ -116,3 +116,7 @@ bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps qa/steps/smoke.json -
 ```
 
 단계: `wait`, `waitNew`(마지막 키 입력 뒤 출력만), `idle`, `send`, `shot`, `mark`, `rm`. 슬래시 명령은 입력한 뒤 자동완성 줄을 `waitNew`로 기다렸다가 Enter를 보냅니다. 너무 이른 Enter는 에이전트에게 프롬프트로 갈 수 있습니다.
+
+## 라이선스
+
+MIT. [LICENSE](LICENSE) 참고.

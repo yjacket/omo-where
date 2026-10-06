@@ -138,16 +138,23 @@ async function whereHandler(_args: string, ctx: Ctx): Promise<void> {
 
 		await ctx.ui?.custom?.(
 			(tui, theme, _keybindings, done) => {
-				const rescan = async (hint?: string): Promise<void> => {
+				// pi-tui can be gone by the time a late scan or key lands; asking it to redraw must never throw out.
+				const render = (): void => {
 					try {
-						view.setReport(await scan());
-					} catch (error) {
-						view.setHint(`다시 읽기 실패: ${message(error)}`);
 						tui.requestRender();
-						return;
+					} catch {
+						// a dead TUI must not turn a callback into a throw
 					}
+				};
+				const rescanFailed = (error: unknown): void => {
+					view.setHint(`다시 읽지 못함: ${message(error)}`);
+					render();
+				};
+				/** Rejects on a failed scan; every fire-and-forget caller attaches rescanFailed. */
+				const rescan = async (hint?: string): Promise<void> => {
+					view.setReport(await scan());
 					if (hint !== undefined) view.setHint(hint);
-					tui.requestRender();
+					render();
 				};
 				const view: WhereView = new WhereView({
 					report,
@@ -155,20 +162,27 @@ async function whereHandler(_args: string, ctx: Ctx): Promise<void> {
 					height: () => Math.max(12, (process.stdout.rows ?? 40) - 1),
 					onClose: () => done(undefined),
 					onEdit: (path) => {
-						if (ctx.isIdle?.() === false) {
-							view.setHint("에이전트가 일하는 중에는 편집 안 함");
-							return;
+						try {
+							if (ctx.isIdle?.() === false) {
+								view.setHint("에이전트가 일하는 중에는 편집 안 함");
+								return;
+							}
+							const result = openInEditor({
+								tui,
+								command: resolveEditorCommand({ ...(externalEditor !== undefined ? { setting: externalEditor } : {}), env: process.env, platform: process.platform }),
+								path,
+								platform: process.platform,
+							});
+							void rescan(result.ok ? "바뀐 내용은 /reload 후 적용" : result.message).catch(rescanFailed);
+						} catch (error) {
+							view.setHint(`편집기를 열 수 없음: ${message(error)}`);
+							render();
 						}
-						const result = openInEditor({
-							tui,
-							command: resolveEditorCommand({ ...(externalEditor !== undefined ? { setting: externalEditor } : {}), env: process.env, platform: process.platform }),
-							path,
-							platform: process.platform,
-						});
-						void rescan(result.ok ? "바뀐 내용은 /reload 후 적용" : result.message);
 					},
-					onRescan: () => void rescan(),
-					requestRender: () => tui.requestRender(),
+					onRescan: () => {
+						void rescan().catch(rescanFailed);
+					},
+					requestRender: () => render(),
 				});
 				return view;
 			},

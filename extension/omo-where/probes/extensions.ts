@@ -84,7 +84,7 @@ function collectCands(dir: string, scope: Scope, names: readonly string[], untru
 			const hasEntry = ENTRY_FILES.some((f) => statOf(join(full, f)) === "file");
 			out.push(hasEntry
 				? { path: full, kind: "dir", loadable: true, scope, reason: "확장 폴더", untrusted }
-				: { path: full, kind: "dir", loadable: false, scope, reason: "진입 파일 없음", untrusted });
+				: { path: full, kind: "dir", loadable: false, scope, reason: "진입 파일 없음", problem: "진입 파일 없음 - 남은 폴더?", untrusted });
 			continue;
 		}
 		if (st === "file" && LOADABLE_EXT.test(name)) {

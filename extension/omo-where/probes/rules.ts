@@ -1,9 +1,10 @@
 // Rules probe: mirrors the builtin "rules" extension's location tables.
 // There is no host function for rules, so this module re-implements that harness rule and
 // says so in Category.note; disk statuses are computed here, not handed down by the host.
-import { existsSync, readdirSync, realpathSync, statSync, type Dirent } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
-import { samePath, type Probe, type ProbeEnv, type Scope, type Status } from "../model.ts";
+import { samePath, type ProbeEnv, type ProbeFn, type Scope, type Status } from "../model.ts";
+import { entryIsDir, entryIsFile, makeCollector, statKind, statProblem, walkTree, type Problem } from "./fs-util.ts";
 
 // RT/dist/core/extensions/builtin/rules/rules/constants.js
 const PROJECT_MARKERS = [".git", "pnpm-workspace.yaml", "package.json", "pyproject.toml", "Cargo.toml", "go.mod", ".venv"];
@@ -21,7 +22,6 @@ const RULE_EXTENSIONS = [".md", ".mdc"];
 const EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".turbo", ".next", "coverage"]);
 
 const MAX_ANCESTORS = 64;
-const MAX_ENTRIES = 2000;
 const MAX_DEPTH = 6;
 const NOTE = "규칙 확장 규칙을 따라 계산 · 읽기·수정 때 그 파일 위쪽 규칙이 더 붙을 수 있음";
 const CONTEXT_REASON = "지침 파일로 이미 들어감";
@@ -30,108 +30,24 @@ const FILE_REASON = "규칙 파일";
 const UNTRUSTED_REASON = "프로젝트 신뢰 안 함";
 const RESOURCE_PROBLEM = "신뢰 안 한 프로젝트에 리소스 있음";
 
-type Row = Omit<Probe, "id" | "rank">;
-type StatKind = "dir" | "file" | "other" | "missing" | "error";
-
-function describe(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-/** Path comparison key; used only to dedupe probe ids, never for status decisions. */
-function slashKey(path: string): string {
-	const s = path.replace(/\\/g, "/").replace(/\/+$/, "");
-	return process.platform === "win32" ? s.toLowerCase() : s;
-}
-
-function statKind(path: string): { kind: StatKind; message?: string } {
-	try {
-		const stats = statSync(path);
-		if (stats.isDirectory()) return { kind: "dir" };
-		if (stats.isFile()) return { kind: "file" };
-		return { kind: "other" };
-	} catch (error) {
-		const message = describe(error);
-		return existsSync(path) ? { kind: "error", message } : { kind: "missing" };
-	}
-}
-
-function makeCollector() {
-	const probes: Probe[] = [];
-	const ids = new Set<string>();
-	return {
-		add(row: Row): Probe {
-			const base = `${row.kind}:${slashKey(row.path)}`;
-			let id = base;
-			for (let n = 2; ids.has(id); n += 1) id = `${base}#${n}`;
-			ids.add(id);
-			const probe: Probe = { ...row, id, rank: probes.length + 1 };
-			probes.push(probe);
-			return probe;
-		},
-		finish(): readonly Probe[] {
-			return probes;
-		},
-	};
-}
-
-function entryIsFile(dir: string, entry: Dirent): boolean {
-	if (entry.isFile()) return true;
-	if (!entry.isSymbolicLink()) return false;
-	try {
-		return statSync(join(dir, entry.name)).isFile();
-	} catch {
-		return false;
-	}
-}
-
-function entryIsDir(dir: string, entry: Dirent): boolean {
-	if (entry.isDirectory()) return true;
-	if (!entry.isSymbolicLink()) return false;
-	try {
-		return statSync(join(dir, entry.name)).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-type WalkResult = { readonly entries: readonly string[]; readonly problems: readonly { readonly path: string; readonly reason: string }[] };
+type WalkResult = { readonly entries: readonly string[]; readonly problems: readonly Problem[] };
 
 /** Recursive *.md/*.mdc scan of one rule dir, honoring the harness' excluded dirs and bounds. */
 function walkRules(root: string): WalkResult {
 	const entries: string[] = [];
-	const problems: { path: string; reason: string }[] = [];
-	const visited = new Set<string>();
-	const stack: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
-	while (stack.length > 0) {
-		const current = stack.pop() as { dir: string; depth: number };
-		try {
-			const real = realpathSync.native(current.dir);
-			if (visited.has(real)) continue;
-			visited.add(real);
-		} catch {
-			// not resolvable: keep walking with the plain path
-		}
-		let dirents: Dirent[];
-		try {
-			dirents = readdirSync(current.dir, { withFileTypes: true });
-		} catch (error) {
-			problems.push({ path: current.dir, reason: `읽지 못함: ${describe(error)}` });
-			continue;
-		}
-		if (dirents.length > MAX_ENTRIES) {
-			dirents = dirents.slice(0, MAX_ENTRIES);
-			problems.push({ path: current.dir, reason: "목록 잘림" });
-		}
+	const problems = walkTree(root, (dir, dirents, depth) => {
+		const children: string[] = [];
 		for (const entry of dirents) {
-			const full = join(current.dir, entry.name);
-			if (entryIsDir(current.dir, entry)) {
-				if (!EXCLUDED_DIRS.has(entry.name) && current.depth < MAX_DEPTH) stack.push({ dir: full, depth: current.depth + 1 });
+			const full = join(dir, entry.name);
+			if (entryIsDir(dir, entry)) {
+				if (!EXCLUDED_DIRS.has(entry.name) && depth < MAX_DEPTH) children.push(full);
 				continue;
 			}
-			if (entryIsFile(current.dir, entry) && RULE_EXTENSIONS.includes(extname(entry.name).toLowerCase())) entries.push(full);
+			if (entryIsFile(dir, entry) && RULE_EXTENSIONS.includes(extname(entry.name).toLowerCase())) entries.push(full);
 		}
-	}
-	entries.sort((a, b) => a.localeCompare(b));
+		return children;
+	});
+	entries.sort((x, y) => x.localeCompare(y));
 	return { entries, problems };
 }
 
@@ -176,17 +92,9 @@ export const probeRules: ProbeFn = (env) => {
 	};
 
 	const emitRuleDir = (dir: string, scope: Scope, gated: boolean): void => {
-		const stat = statKind(dir);
-		if (stat.kind === "missing") {
-			col.add({ path: dir, kind: "dir", status: "missing", reason: "폴더 없음", scope });
-			return;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: dir, kind: "dir", status: "error", reason: `읽지 못함: ${stat.message}`, scope });
-			return;
-		}
-		if (stat.kind !== "dir") {
-			col.add({ path: dir, kind: "dir", status: "error", reason: "폴더가 아님", scope });
+		const problem = statProblem(dir, "dir", statKind(dir), scope);
+		if (problem !== undefined) {
+			col.add(problem);
 			return;
 		}
 		const walk = walkRules(dir);
@@ -199,25 +107,14 @@ export const probeRules: ProbeFn = (env) => {
 			scope,
 			...(gated && walk.entries.length > 0 ? { problem: RESOURCE_PROBLEM } : {}),
 		});
-		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope });
+		for (const item of walk.problems) col.add({ path: item.path, kind: "dir", status: "error", reason: item.reason, scope });
 		for (const file of walk.entries) emitFile(file, scope, gated);
 	};
 
 	const emitSingleFile = (file: string, scope: Scope, gated: boolean): void => {
-		const stat = statKind(file);
-		if (stat.kind === "missing") {
-			col.add({ path: file, kind: "file", status: "missing", reason: "파일 없음", scope });
-			return;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: file, kind: "file", status: "error", reason: `읽지 못함: ${stat.message}`, scope });
-			return;
-		}
-		if (stat.kind !== "file") {
-			col.add({ path: file, kind: "file", status: "error", reason: "파일이 아님", scope });
-			return;
-		}
-		emitFile(file, scope, gated);
+		const problem = statProblem(file, "file", statKind(file), scope);
+		if (problem !== undefined) col.add(problem);
+		else emitFile(file, scope, gated);
 	};
 
 	// Project dirs, then project single files.
@@ -230,17 +127,9 @@ export const probeRules: ProbeFn = (env) => {
 	let winner: string | undefined;
 	for (const rel of USER_HOME_SINGLE_FILES) {
 		const file = join(env.home, rel);
-		const stat = statKind(file);
-		if (stat.kind === "missing") {
-			col.add({ path: file, kind: "file", status: "missing", reason: "파일 없음", scope: "전역" });
-			continue;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: file, kind: "file", status: "error", reason: `읽지 못함: ${stat.message}`, scope: "전역" });
-			continue;
-		}
-		if (stat.kind !== "file") {
-			col.add({ path: file, kind: "file", status: "error", reason: "파일이 아님", scope: "전역" });
+		const problem = statProblem(file, "file", statKind(file), "전역");
+		if (problem !== undefined) {
+			col.add(problem);
 			continue;
 		}
 		const context = contextOf(file);

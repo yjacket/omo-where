@@ -72,6 +72,7 @@ describe("probeExtensions", () => {
 		const row = find(cat, (p) => p.path === t.path("agent/extensions/nope"));
 		expect(row.status).toBe("disabled");
 		expect(row.reason).toBe("진입 파일 없음");
+		expect(row.problem).toBe("진입 파일 없음 - 남은 폴더?");
 	});
 
 	test("duplicate basename across dirs gets the duplicate problem", async () => {

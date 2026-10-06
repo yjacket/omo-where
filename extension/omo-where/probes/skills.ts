@@ -1,27 +1,20 @@
 // Skills probe: lists every candidate skill root and SKILL.md in harness priority order.
 // Statuses come from env.senpi.loadSkills (host) when present, else from env.live.skills.
 // The probe's own tables only decide the candidate locations, the 없음 rows and the reason strings.
-import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+// Folders omo does not read (~/.claude, other agents' dirs) are listed last so numbered rows read as priority.
+import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import type { Category, Probe, ProbeEnv, Scope, Status } from "../model.ts";
 import { LIVE_PROBLEM, normPath, samePath } from "../model.ts";
+import { describe, entryIsDir, entryIsFile, isUnder, makeCollector, slashKey, statKind, statProblem, walkTree, type Problem, type Row } from "./fs-util.ts";
 
 const CONFIG_DIR_NAME = ".omo";
 const MAX_ANCESTORS = 64;
-const MAX_ENTRIES = 2000;
 const MAX_DEPTH = 6;
 const NOTE = "같은 이름이면 먼저 찾은 쪽이 이김";
 const NOTE_SESSION = "세션 기준";
 
-type Row = Omit<Probe, "id" | "rank">;
-type StatKind = "dir" | "file" | "other" | "missing" | "error";
 type SkillInfo = { readonly name: string; readonly filePath: string };
-
-/** Resolves a path to its comparison key without touching a possibly missing file. */
-function slashKey(path: string): string {
-	const s = path.replace(/\\/g, "/").replace(/\/+$/, "");
-	return process.platform === "win32" ? s.toLowerCase() : s;
-}
 
 /** Literal comparison key: path.resolve, slashes, drive-letter case; never follows links. */
 function literalKey(path: string): string {
@@ -37,12 +30,6 @@ function shortHome(path: string, home: string): string {
 	return slashKey(path).startsWith(`${slashKey(home)}/`) ? `~${shown.slice(base.length)}` : shown;
 }
 
-function isUnder(child: string, parent: string): boolean {
-	const c = slashKey(child);
-	const p = slashKey(parent);
-	return c === p || c.startsWith(`${p}/`);
-}
-
 function omoAiPath(path: string): boolean {
 	return slashKey(path).includes("/node_modules/omo-ai/");
 }
@@ -56,99 +43,19 @@ function liveSkillLabel(path: string): { scope: Scope; reason: string } {
 	return { scope: "세션", reason: "확장이 넣은 스킬" };
 }
 
-function describe(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function statKind(path: string): { kind: StatKind; message?: string } {
-	try {
-		const stats = statSync(path);
-		if (stats.isDirectory()) return { kind: "dir" };
-		if (stats.isFile()) return { kind: "file" };
-		return { kind: "other" };
-	} catch (error) {
-		const message = describe(error);
-		return existsSync(path) ? { kind: "error", message } : { kind: "missing" };
-	}
-}
-
-function makeCollector() {
-	const probes: Probe[] = [];
-	const ids = new Set<string>();
-	return {
-		add(row: Row): Probe {
-			const base = `${row.kind}:${slashKey(row.path)}`;
-			let id = base;
-			for (let n = 2; ids.has(id); n += 1) id = `${base}#${n}`;
-			ids.add(id);
-			const probe: Probe = { ...row, id, rank: probes.length + 1 };
-			probes.push(probe);
-			return probe;
-		},
-		finish(): readonly Probe[] {
-			return probes;
-		},
-	};
-}
-
-function entryIsFile(dir: string, entry: Dirent): boolean {
-	if (entry.isFile()) return true;
-	if (!entry.isSymbolicLink()) return false;
-	try {
-		return statSync(join(dir, entry.name)).isFile();
-	} catch {
-		return false;
-	}
-}
-
-function entryIsDir(dir: string, entry: Dirent): boolean {
-	if (entry.isDirectory()) return true;
-	if (!entry.isSymbolicLink()) return false;
-	try {
-		return statSync(join(dir, entry.name)).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-type WalkResult = { readonly entries: readonly string[]; readonly problems: readonly { path: string; reason: string }[] };
+type WalkResult = { readonly entries: readonly string[]; readonly problems: readonly Problem[] };
 
 /** Finds <dir>/SKILL.md roots below dir; recursion stops at a skill dir, skips dot dirs and node_modules. */
 function walkSkills(root: string): WalkResult {
 	const entries: string[] = [];
-	const problems: { path: string; reason: string }[] = [];
-	const visited = new Set<string>();
-	const stack: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
-	while (stack.length > 0) {
-		const current = stack.pop() as { dir: string; depth: number };
-		try {
-			const real = realpathSync.native(current.dir);
-			if (visited.has(real)) continue;
-			visited.add(real);
-		} catch {
-			// not resolvable: keep walking with the plain path
+	const problems = walkTree(root, (dir, dirents, depth) => {
+		if (dirents.some((entry) => entry.name === "SKILL.md" && entryIsFile(dir, entry))) {
+			entries.push(join(dir, "SKILL.md"));
+			return [];
 		}
-		let dirents: Dirent[];
-		try {
-			dirents = readdirSync(current.dir, { withFileTypes: true });
-		} catch (error) {
-			problems.push({ path: current.dir, reason: `읽지 못함: ${describe(error)}` });
-			continue;
-		}
-		if (dirents.length > MAX_ENTRIES) {
-			dirents = dirents.slice(0, MAX_ENTRIES);
-			problems.push({ path: current.dir, reason: "목록 잘림" });
-		}
-		if (dirents.some((entry) => entry.name === "SKILL.md" && entryIsFile(current.dir, entry))) {
-			entries.push(join(current.dir, "SKILL.md"));
-			continue;
-		}
-		if (current.depth >= MAX_DEPTH) continue;
-		for (const entry of dirents) {
-			if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-			if (entryIsDir(current.dir, entry)) stack.push({ dir: join(current.dir, entry.name), depth: current.depth + 1 });
-		}
-	}
+		if (depth >= MAX_DEPTH) return [];
+		return dirents.filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules" && entryIsDir(dir, entry)).map((entry) => join(dir, entry.name));
+	});
 	return { entries, problems };
 }
 
@@ -200,6 +107,31 @@ function winnerLabel(loser: { winnerPath: string; name: string }, loadedFiles: r
 	return winner?.name ?? loser.name;
 }
 
+/** Rows for folders omo does not read: the ~/.claude/skills summary and other agents' skill dirs with their entries. */
+function foreignRows(env: ProbeEnv, diskSkills: string[]): Row[] {
+	const rows: Row[] = [];
+	const claudeSkills = join(env.home, ".claude", "skills");
+	if (statKind(claudeSkills).kind === "dir") {
+		const walk = walkSkills(claudeSkills);
+		rows.push({ path: claudeSkills, kind: "dir", status: "disabled", scope: "Claude Code 폴더", reason: `Claude Code 폴더 - omo는 안 읽음 · 스킬 ${walk.entries.length}개` });
+	}
+	for (const agentRoot of [join(env.home, ".pi", "agent"), join(env.home, ".senpi", "agent")]) {
+		if (samePath(agentRoot, env.agentDir) || statKind(agentRoot).kind !== "dir") continue;
+		const scope: Scope = "다른 에이전트 폴더";
+		const reason = "지금 세션은 이 폴더를 안 읽음";
+		const dir = join(agentRoot, "skills");
+		rows.push({ path: dir, kind: "dir", status: "disabled", reason, scope });
+		if (statKind(dir).kind !== "dir") continue;
+		const walk = walkSkills(dir);
+		for (const problem of walk.problems) rows.push({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope });
+		for (const file of walk.entries) {
+			diskSkills.push(file);
+			rows.push({ path: file, kind: "file", status: "disabled", reason, scope });
+		}
+	}
+	return rows;
+}
+
 export function probeSkills(env: ProbeEnv): Category {
 	const roots = candidateRoots(env);
 	const col = makeCollector();
@@ -210,7 +142,15 @@ export function probeSkills(env: ProbeEnv): Category {
 		.filter((root) => root.loadable && !(root.project && !env.trusted))
 		.filter((root) => statKind(root.path).kind === "dir")
 		.map((root) => root.path);
-	const result = loadSkills ? loadSkills({ cwd: env.cwd, agentDir: env.agentDir, skillPaths, includeDefaults: false }) : undefined;
+	let result: ReturnType<NonNullable<typeof loadSkills>> | undefined;
+	let loadError: string | undefined;
+	if (loadSkills) {
+		try {
+			result = loadSkills({ cwd: env.cwd, agentDir: env.agentDir, skillPaths, includeDefaults: false });
+		} catch (error) {
+			loadError = describe(error);
+		}
+	}
 	const loadedFiles: readonly SkillInfo[] = result?.skills ?? [];
 
 	const losers = new Map<string, { winnerPath: string; name: string }>();
@@ -276,17 +216,9 @@ export function probeSkills(env: ProbeEnv): Category {
 	};
 
 	for (const root of roots) {
-		const stat = statKind(root.path);
-		if (stat.kind === "missing") {
-			col.add({ path: root.path, kind: "dir", status: "missing", reason: "폴더 없음", scope: root.scope });
-			continue;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: root.path, kind: "dir", status: "error", reason: `읽지 못함: ${stat.message}`, scope: root.scope });
-			continue;
-		}
-		if (stat.kind !== "dir") {
-			col.add({ path: root.path, kind: "dir", status: "error", reason: "폴더가 아님", scope: root.scope });
+		const problem = statProblem(root.path, "dir", statKind(root.path), root.scope);
+		if (problem !== undefined) {
+			col.add(problem);
 			continue;
 		}
 		const gated = root.project && !env.trusted;
@@ -299,7 +231,7 @@ export function probeSkills(env: ProbeEnv): Category {
 			scope: root.scope,
 			...(gated && walk.entries.length > 0 ? { problem: "신뢰 안 한 프로젝트에 리소스 있음" } : {}),
 		});
-		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope: root.scope });
+		for (const item of walk.problems) col.add({ path: item.path, kind: "dir", status: "error", reason: item.reason, scope: root.scope });
 		for (const file of walk.entries) emitSkill(file, root.scope, gated);
 	}
 
@@ -309,63 +241,38 @@ export function probeSkills(env: ProbeEnv): Category {
 		const reason = entry.enabled ? "스킬" : "설정에서 꺼짐";
 		const status: Status = entry.enabled ? "loaded" : "disabled";
 		const stat = statKind(entry.path);
-		if (stat.kind === "missing") {
-			col.add({ path: entry.path, kind: "file", status: "missing", reason: "경로 없음", scope });
-			continue;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: entry.path, kind: "file", status: "error", reason: `읽지 못함: ${stat.message}`, scope });
-			continue;
-		}
-		if (stat.kind === "file") {
+		if (stat.kind !== "dir") {
+			const problem = statProblem(entry.path, "file", stat, scope, "경로 없음");
+			if (problem !== undefined) {
+				col.add(problem);
+				continue;
+			}
 			diskSkills.push(entry.path);
 			col.add({ path: entry.path, kind: "file", status, reason, scope });
 			continue;
 		}
-		if (stat.kind !== "dir") {
-			col.add({ path: entry.path, kind: "file", status: "error", reason: "파일이 아님", scope });
-			continue;
-		}
 		col.add({ path: entry.path, kind: "dir", status, reason: entry.enabled ? "폴더 검색" : "설정에서 꺼짐", scope });
 		const walk = walkSkills(entry.path);
-		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope });
+		for (const item of walk.problems) col.add({ path: item.path, kind: "dir", status: "error", reason: item.reason, scope });
 		for (const file of walk.entries) {
 			diskSkills.push(file);
 			col.add({ path: file, kind: "file", status, reason, scope });
 		}
 	}
 
-	const claudeSkills = join(env.home, ".claude", "skills");
-	if (statKind(claudeSkills).kind === "dir") {
-		const walk = walkSkills(claudeSkills);
-		col.add({ path: claudeSkills, kind: "dir", status: "disabled", scope: "Claude Code 폴더", reason: `Claude Code 폴더 - omo는 안 읽음 · 스킬 ${walk.entries.length}개` });
-	}
-	for (const agentRoot of [join(env.home, ".pi", "agent"), join(env.home, ".senpi", "agent")]) {
-		if (samePath(agentRoot, env.agentDir) || statKind(agentRoot).kind !== "dir") continue;
-		const foreignScope: Scope = "다른 에이전트 폴더";
-		const foreignReason = "지금 세션은 이 폴더를 안 읽음";
-		const dir = join(agentRoot, "skills");
-		col.add({ path: dir, kind: "dir", status: "disabled", reason: foreignReason, scope: foreignScope });
-		if (statKind(dir).kind !== "dir") continue;
-		const walk = walkSkills(dir);
-		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope: foreignScope });
-		for (const file of walk.entries) {
-			diskSkills.push(file);
-			col.add({ path: file, kind: "file", status: "disabled", reason: foreignReason, scope: foreignScope });
+	// Foreign files are known before the live rows so a live skill from there is not listed twice.
+	const foreign = foreignRows(env, diskSkills);
+	for (const skill of liveSkills ?? []) {
+		if (diskSkills.some((path) => literalKey(path) === literalKey(skill.filePath))) continue;
+		const { scope, reason } = liveSkillLabel(skill.filePath);
+		if (existsSync(skill.filePath)) {
+			col.add({ path: skill.filePath, kind: "file", status: "loaded", reason, scope });
+			continue;
 		}
+		col.add({ path: skill.filePath, kind: "file", status: "missing", reason: "스킬", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
 	}
+	for (const row of foreign) col.add(row);
 
-	if (liveSkills !== undefined) {
-		for (const skill of liveSkills) {
-			if (diskSkills.some((path) => literalKey(path) === literalKey(skill.filePath))) continue;
-			const { scope, reason } = liveSkillLabel(skill.filePath);
-			if (existsSync(skill.filePath)) {
-				col.add({ path: skill.filePath, kind: "file", status: "loaded", reason, scope });
-				continue;
-			}
-			col.add({ path: skill.filePath, kind: "file", status: "missing", reason: "스킬", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
-		}
-	}
-
-	return { id: "skills", label: "스킬", probes: col.finish(), note: result !== undefined ? NOTE : NOTE_SESSION };
+	const base = result !== undefined ? NOTE : NOTE_SESSION;
+	return { id: "skills", label: "스킬", probes: col.finish(), note: loadError !== undefined ? `${base} · 스킬 읽기 실패: ${loadError}` : base };
 }

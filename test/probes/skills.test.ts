@@ -424,6 +424,38 @@ describe("probeSkills", () => {
 		expect(findLiteral(category, t.path("cwd/.omo/skills")).reason).toBe("폴더 검색");
 	});
 
+	test("a throwing loadSkills falls back to env.live.skills and the note carries the failure", () => {
+		tree = makeTree({ ".git": null, "agent/skills/liveonly/SKILL.md": SKILL_MD });
+		const file = tree.path("agent/skills/liveonly/SKILL.md");
+		const senpi: SenpiApi = {
+			loadSkills: () => {
+				throw new Error("boom");
+			},
+		};
+		const category = probeSkills(envFor({ senpi, live: { skills: [{ name: "liveonly", filePath: file }] } }));
+
+		expect(category.note).toBe("세션 기준 · 스킬 읽기 실패: boom");
+		expect(find(category, file).status).toBe("loaded");
+	});
+
+	test("rows for folders omo does not read come after the live skill rows", () => {
+		tree = makeTree({ ".git": null, "home/.claude/skills/cc/SKILL.md": SKILL_MD, "home/.pi/agent/skills/orca/SKILL.md": SKILL_MD });
+		const ghost = tree.path("elsewhere/ghost/SKILL.md");
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([], []) };
+		const category = probeSkills(envFor({ senpi, live: { skills: [{ name: "ghost", filePath: ghost }] } }));
+
+		const rank = (path: string): number => find(category, path).rank;
+		const claude = rank(tree.path("home/.claude/skills"));
+		const pi = rank(tree.path("home/.pi/agent/skills"));
+		const piEntry = rank(tree.path("home/.pi/agent/skills/orca/SKILL.md"));
+		expect(rank(ghost)).toBeLessThan(claude);
+		expect(claude).toBeLessThan(pi);
+		expect(pi).toBeLessThan(piEntry);
+		expect(piEntry).toBe(category.probes.length);
+		const foreign = category.probes.filter((probe) => probe.scope === "Claude Code 폴더" || probe.scope === "다른 에이전트 폴더");
+		expect(foreign.every((probe) => probe.rank > rank(ghost))).toBe(true);
+	});
+
 	test("category id and label match the contract", () => {
 		tree = makeTree({ ".git": null });
 		const category = probeSkills(envFor());

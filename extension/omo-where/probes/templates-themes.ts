@@ -1,10 +1,11 @@
 // Probe: 프롬프트 템플릿과 테마. The host decides statuses via env.host.resolved;
 // without host data the probe falls back to the harness rule "first name wins".
 // Its own tables only decide the candidate dirs, the 없음 rows and the reason strings.
-import { type Dirent, readdirSync, statSync } from "node:fs";
+import { type Dirent, readdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import type { Category, CategoryId, Probe, ProbeEnv, ProbeFn, Scope } from "../model.ts";
+import type { Category, CategoryId, ProbeEnv, ProbeFn, Scope } from "../model.ts";
 import { samePath } from "../model.ts";
+import { describe, entryIsFile, isUnder, makeCollector, slashKey, statKind, statProblem } from "./fs-util.ts";
 
 const MAX_ENTRIES = 2000;
 const NOTE = "같은 이름이면 먼저 찾은 쪽이 이김";
@@ -14,54 +15,11 @@ const FILE_EXT: Readonly<Record<Kind, RegExp>> = { templates: /\.md$/i, themes: 
 const LABEL: Readonly<Record<Kind, string>> = { templates: "프롬프트 템플릿", themes: "테마" };
 
 type Kind = "templates" | "themes";
-
-/** Mutable intermediate row; Probe fields are readonly. */
-type MutableProbe = { -readonly [K in keyof Probe]: Probe[K] };
-type Row = Omit<Probe, "id" | "rank">;
 type DirSpec = { readonly path: string; readonly scope: Scope; readonly project: boolean };
-type StatKind = { readonly kind: "dir" | "file" | "other" | "missing" } | { readonly kind: "error"; readonly message: string };
 type Listed = { readonly ok: true; readonly paths: readonly string[]; readonly truncated: boolean } | { readonly ok: false; readonly message: string };
-
-function slashKey(path: string): string {
-	const s = path.replace(/\\/g, "/").replace(/\/+$/, "");
-	return process.platform === "win32" ? s.toLowerCase() : s;
-}
-
-function isUnder(child: string, parent: string): boolean {
-	const c = slashKey(child);
-	const p = slashKey(parent);
-	return c === p || c.startsWith(`${p}/`);
-}
 
 function omoAiPath(path: string): boolean {
 	return slashKey(path).includes("/node_modules/omo-ai/");
-}
-
-function describe(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function statKind(path: string): StatKind {
-	try {
-		const stats = statSync(path);
-		if (stats.isDirectory()) return { kind: "dir" };
-		if (stats.isFile()) return { kind: "file" };
-		return { kind: "other" };
-	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
-		if (code === "ENOENT" || code === "ENOTDIR") return { kind: "missing" };
-		return { kind: "error", message: describe(error) };
-	}
-}
-
-function entryIsFile(dir: string, entry: Dirent): boolean {
-	if (entry.isFile()) return true;
-	if (!entry.isSymbolicLink()) return false;
-	try {
-		return statSync(join(dir, entry.name)).isFile();
-	} catch {
-		return false;
-	}
 }
 
 /** Non-recursive listing of matching files, capped at MAX_ENTRIES. */
@@ -81,23 +39,6 @@ function listFiles(dir: string, ext: RegExp): Listed {
 	}
 	paths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 	return { ok: true, paths, truncated };
-}
-
-function makeCollector() {
-	const rows: MutableProbe[] = [];
-	const ids = new Set<string>();
-	return {
-		add(row: Row): MutableProbe {
-			const base = `${row.kind}:${slashKey(row.path)}`;
-			let id = base;
-			for (let n = 2; ids.has(id); n += 1) id = `${base}#${n}`;
-			ids.add(id);
-			const probe: MutableProbe = { ...row, id, rank: rows.length + 1 };
-			rows.push(probe);
-			return probe;
-		},
-		rows,
-	};
 }
 
 /** agentDir first, then cwd/.omo, then cwd/.pi - the harness auto-dir order. */
@@ -135,17 +76,9 @@ function build(env: ProbeEnv, kind: Kind): Category {
 
 	for (const dir of dirs) {
 		const untrusted = dir.project && !env.trusted;
-		const stat = statKind(dir.path);
-		if (stat.kind === "missing") {
-			col.add({ path: dir.path, kind: "dir", status: "missing", reason: "폴더 없음", scope: dir.scope });
-			continue;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: dir.path, kind: "dir", status: "error", reason: `읽지 못함: ${stat.message}`, scope: dir.scope });
-			continue;
-		}
-		if (stat.kind !== "dir") {
-			col.add({ path: dir.path, kind: "dir", status: "error", reason: "폴더가 아님", scope: dir.scope });
+		const problem = statProblem(dir.path, "dir", statKind(dir.path), dir.scope);
+		if (problem !== undefined) {
+			col.add(problem);
 			continue;
 		}
 		const listed = listFiles(dir.path, ext);
@@ -197,12 +130,8 @@ function build(env: ProbeEnv, kind: Kind): Category {
 			continue;
 		}
 		const stat = statKind(entry.path);
-		if (stat.kind === "missing") {
-			col.add({ path: entry.path, kind: "file", status: "missing", reason: "경로 없음", scope });
-			continue;
-		}
-		if (stat.kind === "error") {
-			col.add({ path: entry.path, kind: "file", status: "error", reason: `읽지 못함: ${stat.message}`, scope });
+		if (stat.kind === "missing" || stat.kind === "error") {
+			col.add(statProblem(entry.path, "file", stat, scope, "경로 없음") as NonNullable<ReturnType<typeof statProblem>>);
 			continue;
 		}
 		col.add({ path: entry.path, kind: stat.kind === "dir" ? "dir" : "file", status: "loaded", reason: kind === "themes" ? "테마" : "템플릿", scope });
