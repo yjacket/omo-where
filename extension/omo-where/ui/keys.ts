@@ -165,10 +165,10 @@ export function reduce(state: ViewState, key: KeyName, report: Report, height: n
 			switch (key) {
 				case "up":
 				case "k":
-					return { state: clampState({ ...base, cat: state.cat - 1 }, report) };
+					return { state: clampState({ ...base, cat: state.cat - 1, row: 0 }, report) };
 				case "down":
 				case "j":
-					return { state: clampState({ ...base, cat: state.cat + 1 }, report) };
+					return { state: clampState({ ...base, cat: state.cat + 1, row: 0 }, report) };
 				case "left":
 				case "right":
 				case "tab":

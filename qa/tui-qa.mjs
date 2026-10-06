@@ -1,6 +1,6 @@
 // Real-TUI QA harness: runs omo in a PTY, drives it with steps, snapshots via xterm.js in headless Chrome.
 // steps: {"wait": text} (anywhere in output), {"waitNew": text} (after the last send), {"idle": ms} (no output for ms),
-//        {"send": keys}, {"shot": name}, {"mark": label}
+//        {"send": keys}, {"shot": name}, {"mark": label}, {"rm": path} (delete a fixture path mid-session)
 // usage: bun qa/tui-qa.mjs --cwd <dir> --cols N --rows N --steps <json> --out <dir> [--editor <cmd>] [--timeout <s>=120] [--agent-dir <dir>]
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -204,10 +204,13 @@ async function main() {
         timing.sends.push({ send: lastSend.text, wait: step.waitNew, ms: Math.round(performance.now() - lastSend.t) });
         lastSend = null;
       }
+    } else if ("rm" in step) {
+      rmSync(resolve(step.rm), { recursive: true, force: true }); // fixture removal mid-session
     } else if ("idle" in step) {
       await waitIdle(Number(step.idle), timeoutMs);
     } else if ("send" in step) {
       sendMark = plain.length;
+      lastData = performance.now(); // idle counts quiet time from the keypress, not from older output
       lastSend = { text: step.send, t: performance.now() };
       proc.terminal.write(step.send);
     } else if ("shot" in step) {

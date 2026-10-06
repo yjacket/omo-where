@@ -213,3 +213,9 @@ describe("reduce viewer pane", () => {
 		expect(virtual.state.hint).toBe("파일만 열 수 있음");
 	});
 });
+
+test("changing the category starts its rows at the top", () => {
+	const start: ViewState = { cat: 0, row: 2, pane: "cats", problemsOnly: false };
+	expect(reduce(start, "down", report(), 20).state.row).toBe(0);
+	expect(reduce({ ...start, cat: 1 }, "up", report(), 20).state.row).toBe(0);
+});

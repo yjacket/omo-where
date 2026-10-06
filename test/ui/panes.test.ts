@@ -213,3 +213,12 @@ describe("renderPanes", () => {
 		expect(lines[23]).toContain("Esc 뒤로");
 	});
 });
+
+test("narrow widths keep q 닫기 visible in the list footer", () => {
+	const { report } = buildFixture();
+	for (const width of [80, 60, 40]) {
+		const lines = renderPanes(report, view(), width, 24, plainTheme);
+		expect(lines[23]).toContain("q 닫기");
+		expect(widthOf(lines[23]!)).toBeLessThanOrEqual(width);
+	}
+});

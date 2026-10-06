@@ -22,6 +22,12 @@ export type ViewerLines = (viewer: ViewerState, width: number, height: number) =
 
 const STATUS_COLOR: Readonly<Record<Status, string>> = { loaded: "success", missing: "muted", shadowed: "warning", disabled: "warning", error: "error" };
 const LIST_FOOTER = "↑↓ 이동 · ←→ 칸 · Enter 열기 · w 이긴 쪽 · e 편집 · f 문제만 · r 다시 읽기 · q 닫기";
+// Narrower terminals drop the self-evident arrow hints first, so "q 닫기" stays visible.
+const LIST_FOOTERS = [LIST_FOOTER, "Enter 열기 · w 이긴 쪽 · e 편집 · f 문제만 · r 다시 읽기 · q 닫기", "Enter 열기 · e 편집 · q 닫기"];
+
+function listFooter(width: number): string {
+	return LIST_FOOTERS.find((footer) => Bun.stringWidth(footer) <= width) ?? LIST_FOOTERS[LIST_FOOTERS.length - 1]!;
+}
 const VIEWER_FOOTER = "↑↓ PgUp/PgDn 스크롤 · e 편집 · Esc 뒤로";
 const SKILL_SUFFIX = "/SKILL.md";
 const SEPARATOR = "│";
@@ -181,7 +187,7 @@ function listLines(report: Report, state: ViewState, width: number, height: numb
 	const detail = state.hint ?? detailText(selected, report);
 	const detailColor = state.hint ? "accent" : selected?.problem ? "warning" : "muted";
 	lines.push(paint(theme, detailColor, fit(detail, width)));
-	lines.push(paint(theme, "muted", fit(LIST_FOOTER, width)));
+	lines.push(paint(theme, "muted", fit(listFooter(width), width)));
 	return lines;
 }
 
