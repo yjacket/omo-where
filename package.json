@@ -1,0 +1,13 @@
+{
+  "name": "omo-where",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OMO/Senpi extension: /where shows where every injected instruction, skill, extension and setting came from, and what was searched but not loaded.",
+  "scripts": {
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.4"
+  }
+}
