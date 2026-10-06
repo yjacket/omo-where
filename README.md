@@ -6,24 +6,27 @@ An OMO/Senpi TUI extension. Type `/where` and an overlay lists every place the h
 
 ## What you see
 
-Left column: categories. Right column: every candidate path in harness priority order. At about 100 columns it looks like this:
+Left column: categories with their problem count. Right column: every candidate path in harness priority order, with its status and reason. The line above the footer explains the selected row. A real capture at 80 columns (skills, middle rows cut):
 
 ```
- omo-where  C:\dev\proj  (agentDir C:\Users\me\.omo\agent)
- ─────────────────────────────────────────────────────────────────────────────────────────────
- 시스템 프롬프트 1 │ #  상태    범위      경로
- 지침 파일      3  │ 1  들어옴  전역      C:\Users\me\.omo\agent\AGENTS.md
- 스킬          12  │ 2  들어옴  상위 폴더 C:\dev\AGENTS.md
- 확장           4  │ 3  없음    프로젝트  C:\dev\proj\AGENTS.md
- 규칙           2  │ 4  밀림    프로젝트  C:\dev\proj\CLAUDE.md  (이긴 쪽: AGENTS.md)
- 프롬프트 템플릿 0 │ 5  들어옴  세션에만  C:\dev\proj\.omo\notes.md
- 테마           1  │
- MCP            3  │
- 훅             0  │
- 메모리         1  │
- 설정           9  │
- ─────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ 이동 · ←→ 칸 · Enter 열기 · w 이긴 쪽 · e 편집 · f 문제만 · r 다시 읽기 · q 닫기
+where · 문제 2개 · 들어옴 134 · 없음 39 · 밀림 2 · 꺼짐 20
+시스템 프롬프트 0     │같은 이름이면 먼저 찾은 쪽이 이김
+지침 파일 0           │1. 없음 ./.omo/skills · 폴더 없음
+스킬 2                │2. 없음 ./.agents/skills · 폴더 없음
+확장 0                │3. 없음 ./.pi/skills · 폴더 없음
+규칙 0                │4. 들어옴 ~/.omo/agent/skills · 폴더 검색
+프롬프트 템플릿 0     │5. 들어옴 ~/.omo/agent/skills/orca-cli · 스킬
+테마 0                │6. 들어옴 ~/.omo/agent/skills/omomeow · 스킬
+MCP 0                 │7. 들어옴 ~/.agents/skills · 폴더 검색
+훅 0                  │8. 들어옴 ~/.agents/skills/visual-board · 스킬
+메모리 0              │9. 들어옴 ~/.agents/skills/orchestration · 스킬
+설정 0                │10. 밀림 ~/.agents/skills/orca-cli · 같은 파일(링크)로 …
+                      │11. 들어옴 ~/.agents/skills/find-skills · 스킬
+                      │12. 들어옴 ~/.agents/skills/computer-use · 스킬
+                      │13. 꺼짐 ~/.claude/skills · Claude Code 폴더 - omo는 안 …
+                      │14. 꺼짐 ~/.pi/agent/skills · 지금 세션은 이 폴더를 안 …
+
+Enter 열기 · w 이긴 쪽 · e 편집 · f 문제만 · r 다시 읽기 · q 닫기
 ```
 
 Enter opens a row in a read-only viewer. Its footer reads `↑↓ PgUp/PgDn 스크롤 · e 편집 · Esc 뒤로`.
@@ -56,7 +59,7 @@ Viewer footer:
 ↑↓ PgUp/PgDn 스크롤 · e 편집 · Esc 뒤로
 ```
 
-`w` jumps to the row that beat a shadowed row. `f` keeps only rows that need attention. `r` probes the disk again.
+`j`/`k` work like ↓/↑. Enter on a category moves to its rows; Esc or `q` closes the overlay, and Esc in the viewer goes back to the list. `w` jumps to the row that beat a shadowed row. `f` keeps only rows that need attention. `r` probes the disk again. In the viewer, Home/End jump to the start or end. On narrow terminals the footer drops the arrow hints first, so `q 닫기` stays visible.
 
 ## Categories and statuses
 
@@ -67,7 +70,7 @@ Categories, in order: 시스템 프롬프트, 지침 파일, 스킬, 확장, 규
 | loaded | 들어옴 | Found and used by the harness |
 | missing | 없음 | Searched, nothing there |
 | shadowed | 밀림 | Found, but a higher-priority entry won |
-| disabled | 꺼짐 | Found, turned off by settings |
+| disabled | 꺼짐 | Found but not read: turned off in settings, an untrusted project, a folder omo does not read (Claude Code, `~/.pi`, `~/.senpi`), or a file that is not an extension entry |
 | error | 오류 | Found, failed to load or parse |
 
 | Live mark | Label | Problem text |
@@ -75,6 +78,10 @@ Categories, in order: 시스템 프롬프트, 지침 파일, 스킬, 확장, 규
 | session-only | 세션에만 | 세션에는 있지만 지금 디스크에 없음 - 지운 뒤 /reload 안 함? |
 | disk-only | 디스크에만 | 세션 시작 뒤 생김 - /reload 해야 들어옴 |
 | changed | 바뀜 | 세션 시작 뒤 내용이 바뀜 - /reload 해야 적용 |
+
+## When files change
+
+Adding or deleting a skill, extension or context file makes omo reload by itself a moment later, which closes the overlay. Open `/where` again to see the new state. Until that reload, rows the session still holds show `세션에만` and new files show `디스크에만`.
 
 ## How it decides
 
@@ -90,7 +97,9 @@ omo-where asks the harness first. It calls the host's own functions (package res
 
 ## Limitations
 
-Tested with @code-yeongyu/senpi 2026.10.10 and omo-ai 5.1.17 on Windows 11 with Bun 1.4.2. It reads harness internals, so an update may change what it sees. Missing internals degrade to fewer rows, not a crash.
+Tested with @code-yeongyu/senpi 2026.10.10 and omo-ai 5.1.19 on Windows 11 with Bun 1.4.2. It reads harness internals, so an update may change what it sees. A missing internal shows a notice and falls back to the live session and folder checks instead of crashing.
+
+The 시스템 프롬프트 category shows the session's base prompt. Text that omo adds on each turn (memory, rule notices) may not be in it, so the memory category finds the memory folder from the session's skill paths or the folder name.
 
 ## Development
 
@@ -98,4 +107,12 @@ Tested with @code-yeongyu/senpi 2026.10.10 and omo-ai 5.1.17 on Windows 11 with 
 bun test
 ```
 
-The suite includes a parity test that checks the candidate tables against the installed harness. `qa/tui-qa.mjs` drives a live TUI smoke check. Requires Bun >= 1.4. No build step and no npm dependencies.
+The suite includes parity tests that run the installed harness functions on fixture folders and check the rows against them. Requires Bun >= 1.4. No build step and no npm dependencies.
+
+`qa/tui-qa.mjs` runs omo in a pseudo-terminal with this extension and `qa/dump-ctx.ts`, follows a JSON step list and saves `.png`, `.ansi` and `.txt` captures through xterm.js in headless Chrome:
+
+```sh
+bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps qa/steps/smoke.json --out .omo/evidence/smoke
+```
+
+Steps: `wait`, `waitNew` (only output after the last keypress), `idle`, `send`, `shot`, `mark`, `rm`. Type a slash command, `waitNew` for its autocomplete line, then send Enter; an early Enter can reach the agent as a prompt.

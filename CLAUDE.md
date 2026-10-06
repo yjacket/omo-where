@@ -41,7 +41,13 @@ Install scripts are local-copy only: agentDir = OMO_CODING_AGENT_DIR > SENPI_COD
 
 ## Live TUI check
 
-Run `node qa/tui-qa.mjs`. It starts omo in a pseudo-terminal, types `/where`, checks both footers, opens a row, and confirms no `TypeError` appears.
+`bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps <steps.json> --out .omo/evidence/<name>` starts omo in a pseudo-terminal with this extension and `qa/dump-ctx.ts` (`/where-dump` writes the live ctx to `<out>/ctx.json`), runs the steps and saves `.png`/`.ansi`/`.txt` per `shot` through xterm.js in headless Chrome. It kills omo and Chrome and removes the Chrome profile on exit.
+
+- Type a slash command, `waitNew` for its autocomplete description, then send `\r`. An early Enter can go to the agent as a prompt.
+- After each key use `{"idle": 350}`; idle counts from the keypress.
+- Check: `/where` opens, ↑↓←→ Enter Esc q work, every category renders, `w` jumps to the winner, `e` with `--editor "bun qa/fake-editor.mjs"` logs the path and leaves the file unchanged, no `TypeError`/`stale extension generation` text in any `.ansi`.
+- omo itself rewrites `tipsHistory` in settings.json on every start; compare settings hashes around the /where code path, not around a whole omo session.
+- Deleting resource files mid-session triggers omo's own reload, which closes the overlay.
 
 ## Commits
 
@@ -49,4 +55,4 @@ Prefix every commit with `where:`.
 
 ## After an OMO update
 
-Run `bun test` (including the parity test) and the `qa/tui-qa.mjs` smoke. Fix the candidate tables or rules/MCP mirroring where parity fails, then update the tested versions in both READMEs.
+Run `bun test` (including the parity test) and the `qa/tui-qa.mjs` smoke (`qa/steps/smoke.json`), then open `/where` in a live session. Fix the candidate tables or rules/MCP mirroring where parity fails, then update the tested versions in both READMEs.
