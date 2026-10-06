@@ -155,7 +155,7 @@ function build(env: ProbeEnv, kind: Kind): Category {
 		}
 		col.add(untrusted
 			? { path: dir.path, kind: "dir", status: "disabled", reason: "프로젝트 신뢰 안 함", scope: dir.scope, ...(listed.paths.length > 0 || listed.truncated ? { problem: "신뢰 안 한 프로젝트에 리소스 있음" } : {}) }
-			: { path: dir.path, kind: "dir", status: "loaded", reason: "", scope: dir.scope });
+			: { path: dir.path, kind: "dir", status: "loaded", reason: "폴더 검색", scope: dir.scope });
 		if (listed.truncated) col.add({ path: dir.path, kind: "dir", status: "error", reason: "목록 잘림", scope: dir.scope });
 
 		for (const path of listed.paths) {
@@ -184,7 +184,7 @@ function build(env: ProbeEnv, kind: Kind): Category {
 				continue;
 			}
 			winner.set(name, path);
-			col.add({ path, kind: "file", status: "loaded", reason: "", scope: dir.scope });
+			col.add({ path, kind: "file", status: "loaded", reason: kind === "themes" ? "테마" : "템플릿", scope: dir.scope });
 		}
 	}
 
@@ -205,7 +205,7 @@ function build(env: ProbeEnv, kind: Kind): Category {
 			col.add({ path: entry.path, kind: "file", status: "error", reason: `읽지 못함: ${stat.message}`, scope });
 			continue;
 		}
-		col.add({ path: entry.path, kind: stat.kind === "dir" ? "dir" : "file", status: "loaded", reason: "", scope });
+		col.add({ path: entry.path, kind: stat.kind === "dir" ? "dir" : "file", status: "loaded", reason: kind === "themes" ? "테마" : "템플릿", scope });
 	}
 
 	if (kind === "themes") {

@@ -146,7 +146,7 @@ describe("/where entry", () => {
 		const run = options.handler("", h.ctx);
 		await opened(h, run);
 		expect(h.view()).toBeInstanceOf(WhereView);
-		expect(h.customCalls[0]?.[1]).toEqual({ overlay: true, overlayOptions: { width: "96%", maxHeight: "90%", minWidth: 60, margin: 1 } });
+		expect(h.customCalls[0]?.[1]).toEqual({ overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", minWidth: 60, margin: 0 } });
 		h.done();
 		await run;
 		expect(h.customCalls.length).toBe(1);

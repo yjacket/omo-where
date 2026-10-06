@@ -10,7 +10,7 @@ const MISSING_REASON = "세션 프롬프트를 읽을 수 없음";
 const FILE_REASON = "지침 파일";
 const PRESET_LABEL = "기본 지침(프리셋)";
 const CONTEXT_LABEL = "지침 파일 묶음";
-const NOTE = "지금 세션에 들어간 완성 프롬프트를 표식으로 잘라 보여줌 · 표식 순서는 프롬프트에 나온 순서";
+const NOTE = "세션의 기본 프롬프트를 표식으로 잘라 보여줌 · 턴마다 붙는 메모리·규칙 안내는 여기 없을 수 있음";
 
 /** Mutable intermediate row; Probe fields are readonly. */
 type MutableProbe = { -readonly [K in keyof Probe]: Probe[K] };

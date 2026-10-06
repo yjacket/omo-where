@@ -152,7 +152,7 @@ async function whereHandler(_args: string, ctx: Ctx): Promise<void> {
 				const view: WhereView = new WhereView({
 					report,
 					theme,
-					height: () => Math.max(12, Math.floor((process.stdout.rows ?? 40) * 0.9) - 2),
+					height: () => Math.max(12, (process.stdout.rows ?? 40) - 1),
 					onClose: () => done(undefined),
 					onEdit: (path) => {
 						if (ctx.isIdle?.() === false) {
@@ -171,7 +171,7 @@ async function whereHandler(_args: string, ctx: Ctx): Promise<void> {
 				});
 				return view;
 			},
-			{ overlay: true, overlayOptions: { width: "96%", maxHeight: "90%", minWidth: 60, margin: 1 } },
+			{ overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", minWidth: 60, margin: 0 } },
 		);
 	} catch (error) {
 		attempt(() => ctx?.ui?.notify?.(`where 오류: ${message(error)}`, "error"));
