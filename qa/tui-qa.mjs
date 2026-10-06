@@ -1,4 +1,6 @@
 // Real-TUI QA harness: runs omo in a PTY, drives it with steps, snapshots via xterm.js in headless Chrome.
+// steps: {"wait": text} (anywhere in output), {"waitNew": text} (after the last send), {"idle": ms} (no output for ms),
+//        {"send": keys}, {"shot": name}, {"mark": label}
 // usage: bun qa/tui-qa.mjs --cwd <dir> --cols N --rows N --steps <json> --out <dir> [--editor <cmd>] [--timeout <s>=120] [--agent-dir <dir>]
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -54,21 +56,35 @@ const cleanup = async () => {
 // ---- PTY output
 const chunks = [];
 let plain = "";
+let sendMark = 0; // plain.length at the last send; waitNew only searches output after it
+let lastData = performance.now();
 const decoder = new TextDecoder();
 let omoExited = null;
 const watchers = new Set();
 const notify = () => { for (const w of [...watchers]) w(); };
 
-const waitFor = (text, ms) => new Promise((res, rej) => {
+const waitFor = (text, ms, from = 0) => new Promise((res, rej) => {
   let timer;
   const check = () => {
-    if (plain.includes(text)) { done(); res(); }
+    if (plain.indexOf(text, from) !== -1) { done(); res(); }
     else if (omoExited !== null) { done(); rej(new Fail(`omo exited (code ${omoExited}) while waiting for "${text}"`)); }
   };
   const done = () => { clearTimeout(timer); watchers.delete(check); };
   watchers.add(check);
   timer = setTimeout(() => { done(); rej(new Fail(`timeout ${ms}ms waiting for "${text}"`)); }, ms);
   check();
+});
+
+// Resolves once no PTY output arrived for quietMs (the TUI finished redrawing), bounded by ms.
+const waitIdle = (quietMs, ms) => new Promise((res, rej) => {
+  const end = performance.now() + ms;
+  const tick = () => {
+    const now = performance.now();
+    if (now - lastData >= quietMs) return res();
+    if (now > end) return rej(new Fail(`output never went quiet for ${quietMs}ms`));
+    setTimeout(tick, Math.min(quietMs, Math.max(10, quietMs - (now - lastData))));
+  };
+  tick();
 });
 
 // ---- Chrome / CDP
@@ -164,6 +180,7 @@ async function main() {
       data(_t, data) {
         chunks.push(Buffer.from(data));
         plain += stripAnsi(decoder.decode(data, { stream: true }));
+        lastData = performance.now();
         notify();
       },
     },
@@ -181,7 +198,16 @@ async function main() {
         timing.sends.push({ send: lastSend.text, wait: step.wait, ms: Math.round(performance.now() - lastSend.t) });
         lastSend = null;
       }
+    } else if ("waitNew" in step) {
+      await waitFor(step.waitNew, timeoutMs, sendMark);
+      if (lastSend) {
+        timing.sends.push({ send: lastSend.text, wait: step.waitNew, ms: Math.round(performance.now() - lastSend.t) });
+        lastSend = null;
+      }
+    } else if ("idle" in step) {
+      await waitIdle(Number(step.idle), timeoutMs);
     } else if ("send" in step) {
+      sendMark = plain.length;
       lastSend = { text: step.send, t: performance.now() };
       proc.terminal.write(step.send);
     } else if ("shot" in step) {

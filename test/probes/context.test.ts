@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { LIVE_PROBLEM, samePath, type Probe, type ProbeEnv } from "../../extension/omo-where/model.ts";
 import { probeContext } from "../../extension/omo-where/probes/context.ts";
 import { makeTree, type Tree } from "../helpers/tree.ts";
@@ -165,6 +166,29 @@ describe("probeContext", () => {
 		expect(row?.status).toBe("disabled");
 		expect(row?.scope).toBe("다른 에이전트 폴더");
 		expect(row?.reason).toBe("지금 세션은 이 폴더를 안 읽음");
+	});
+
+	test("every non-virtual row path is an absolute path in native node:path form", () => {
+		const tree = makeTree({ "agent/AGENTS.md": "g", "proj/deep": null, "home/.pi/agent/AGENTS.md": "pi" });
+		trees.push(tree);
+		// A forward-slash cwd (as some editors hand over) must not leak into ancestor dir rows.
+		const slashyCwd = tree.path("proj/deep").replace(/\\/g, "/");
+		const category = probeContext(envOf({ cwd: slashyCwd, agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		const rows = category.probes.filter((probe) => probe.kind !== "virtual");
+		expect(rows.length).toBeGreaterThan(0);
+		expect(rows.some((probe) => probe.kind === "dir")).toBe(true);
+		for (const row of rows) expect(row.path).toBe(resolve(row.path));
+	});
+
+	test("every loaded row carries a non-empty reason", () => {
+		const tree = makeTree({ "agent/AGENTS.md": "global", "proj/CLAUDE.md": "project", "proj/deep": null });
+		trees.push(tree);
+		const category = probeContext(envOf({ cwd: tree.path("proj/deep"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		const loaded = category.probes.filter((probe) => probe.status === "loaded");
+		expect(loaded.length).toBeGreaterThan(0);
+		for (const row of loaded) expect(row.reason.length).toBeGreaterThan(0);
 	});
 
 	test("dedupes case-insensitive duplicates (agentDir equals cwd, AGENTS.md and AGENTS.MD)", () => {

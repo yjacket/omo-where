@@ -79,7 +79,70 @@ describe("probeRules", () => {
 		expect(row?.status).toBe("shadowed");
 		expect(row?.reason).toBe("지침 파일로 이미 들어감");
 		expect(row?.scope).toBe("프로젝트");
-		expect(samePath(row?.winner ?? "", tree.path("proj/CLAUDE.md"))).toBe(true);
+		expect(row?.winner).toBeUndefined();
+	});
+
+	test("context file does not name itself as its own winner", () => {
+		const tree = makeTree({ "proj/package.json": "{}", "proj/AGENTS.md": "a", "home/.config/opencode/AGENTS.md": "u" });
+		trees.push(tree);
+		const category = probeRules(
+			envOf({
+				cwd: tree.path("proj"),
+				agentDir: tree.path("agent"),
+				home: tree.path("home"),
+				live: {
+					contextFiles: [
+						{ path: tree.path("proj/AGENTS.md"), content: "a" },
+						{ path: tree.path("home/.config/opencode/AGENTS.md"), content: "u" },
+					],
+				},
+			}),
+		);
+
+		const project = find(category.probes, tree.path("proj/AGENTS.md"));
+		expect(project?.status).toBe("shadowed");
+		expect(project?.reason).toBe("지침 파일로 이미 들어감");
+		expect(project?.winner).toBeUndefined();
+
+		const user = find(category.probes, tree.path("home/.config/opencode/AGENTS.md"));
+		expect(user?.status).toBe("shadowed");
+		expect(user?.reason).toBe("지침 파일로 이미 들어감");
+		expect(user?.winner).toBeUndefined();
+	});
+
+	test("winner still names another file when one file shadows another", () => {
+		const tree = makeTree({ "proj/package.json": "{}", "home/.config/opencode/AGENTS.md": "first", "home/.claude/CLAUDE.md": "second" });
+		trees.push(tree);
+		const category = probeRules(envOf({ cwd: tree.path("proj"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		const second = find(category.probes, tree.path("home/.claude/CLAUDE.md"));
+		expect(second?.status).toBe("shadowed");
+		expect(samePath(second?.winner ?? "", tree.path("home/.config/opencode/AGENTS.md"))).toBe(true);
+	});
+
+	test("every loaded row carries a non-empty reason", () => {
+		const tree = makeTree({ "proj/package.json": "{}", "proj/.omo/rules/keep.md": "k", "home/.claude/rules/x.md": "x", "home/.claude/CLAUDE.md": "c" });
+		trees.push(tree);
+		const category = probeRules(envOf({ cwd: tree.path("proj"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		for (const probe of category.probes) {
+			if (probe.status === "loaded") expect(probe.reason.length).toBeGreaterThan(0);
+		}
+		const projectDir = find(category.probes, tree.path("proj/.omo/rules"));
+		expect(projectDir?.status).toBe("loaded");
+		expect(projectDir?.reason).toBe("폴더 검색");
+		const projectFile = find(category.probes, tree.path("proj/.omo/rules/keep.md"));
+		expect(projectFile?.status).toBe("loaded");
+		expect(projectFile?.reason).toBe("규칙 파일");
+		const userDir = find(category.probes, tree.path("home/.claude/rules"));
+		expect(userDir?.status).toBe("loaded");
+		expect(userDir?.reason).toBe("폴더 검색");
+		const userFile = find(category.probes, tree.path("home/.claude/rules/x.md"));
+		expect(userFile?.status).toBe("loaded");
+		expect(userFile?.reason).toBe("규칙 파일");
+		const userSingle = find(category.probes, tree.path("home/.claude/CLAUDE.md"));
+		expect(userSingle?.status).toBe("loaded");
+		expect(userSingle?.reason).toBe("규칙 파일");
 	});
 
 	test("acceptance: project CLAUDE.md shadowed as context - host loader result when live is absent", () => {

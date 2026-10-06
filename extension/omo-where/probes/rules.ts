@@ -25,6 +25,8 @@ const MAX_ENTRIES = 2000;
 const MAX_DEPTH = 6;
 const NOTE = "규칙 확장 규칙을 따라 계산 · 읽기·수정 때 그 파일 위쪽 규칙이 더 붙을 수 있음";
 const CONTEXT_REASON = "지침 파일로 이미 들어감";
+const DIR_REASON = "폴더 검색";
+const FILE_REASON = "규칙 파일";
 const UNTRUSTED_REASON = "프로젝트 신뢰 안 함";
 const RESOURCE_PROBLEM = "신뢰 안 한 프로젝트에 리소스 있음";
 
@@ -163,14 +165,14 @@ export const probeRules: ProbeFn = (env) => {
 	const emitFile = (file: string, scope: Scope, gated: boolean): void => {
 		const context = contextOf(file);
 		if (context !== undefined) {
-			col.add({ path: file, kind: "file", status: "shadowed", reason: CONTEXT_REASON, scope, winner: context });
+			col.add({ path: file, kind: "file", status: "shadowed", reason: CONTEXT_REASON, scope, ...(samePath(context, file) ? {} : { winner: context }) });
 			return;
 		}
 		if (gated) {
 			col.add({ path: file, kind: "file", status: "disabled", reason: UNTRUSTED_REASON, scope });
 			return;
 		}
-		col.add({ path: file, kind: "file", status: "loaded", reason: "", scope });
+		col.add({ path: file, kind: "file", status: "loaded", reason: FILE_REASON, scope });
 	};
 
 	const emitRuleDir = (dir: string, scope: Scope, gated: boolean): void => {
@@ -193,7 +195,7 @@ export const probeRules: ProbeFn = (env) => {
 			path: dir,
 			kind: "dir",
 			status,
-			reason: gated ? UNTRUSTED_REASON : "",
+			reason: gated ? UNTRUSTED_REASON : DIR_REASON,
 			scope,
 			...(gated && walk.entries.length > 0 ? { problem: RESOURCE_PROBLEM } : {}),
 		});
@@ -243,12 +245,12 @@ export const probeRules: ProbeFn = (env) => {
 		}
 		const context = contextOf(file);
 		if (context !== undefined) {
-			col.add({ path: file, kind: "file", status: "shadowed", reason: CONTEXT_REASON, scope: "전역", winner: context });
+			col.add({ path: file, kind: "file", status: "shadowed", reason: CONTEXT_REASON, scope: "전역", ...(samePath(context, file) ? {} : { winner: context }) });
 			continue;
 		}
 		if (winner === undefined) {
 			winner = file;
-			col.add({ path: file, kind: "file", status: "loaded", reason: "", scope: "전역" });
+			col.add({ path: file, kind: "file", status: "loaded", reason: FILE_REASON, scope: "전역" });
 			continue;
 		}
 		col.add({ path: file, kind: "file", status: "shadowed", reason: "앞의 파일이 먼저", scope: "전역", winner });

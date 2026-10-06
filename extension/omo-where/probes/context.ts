@@ -1,7 +1,7 @@
 // Probe: 지침 파일 (context files). The host decides statuses; this module only
 // lists candidate locations and falls back to a local estimate when no host data exists.
 import { readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { LIVE_PROBLEM, normPath, samePath, type Probe, type ProbeEnv, type ProbeFn, type Scope } from "../model.ts";
 
 // Harness order (RT/dist/core/resource-loader.js loadContextFileFromDir).
@@ -94,7 +94,9 @@ export const probeContext: ProbeFn = (env) => {
 	const scopeOf = (dir: string): Scope => (samePath(dir, env.agentDir) ? "전역" : samePath(dir, env.cwd) ? "프로젝트" : "상위 폴더");
 	const rows: MutableProbe[] = [];
 	const push = (row: Omit<Probe, "rank">): void => {
-		rows.push({ ...row, rank: rows.length + 1 });
+		// Emit every row path in native node:path form so ancestor dir rows taken from cwd
+		// ("C:/dev" style) match the join-built file rows instead of keeping cwd separators.
+		rows.push({ ...row, path: resolve(row.path), rank: rows.length + 1 });
 	};
 
 	for (const info of infos) {

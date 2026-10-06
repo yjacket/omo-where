@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { symlinkSync } from "node:fs";
+import { resolve } from "node:path";
 import {
 	LIVE_PROBLEM,
 	samePath,
@@ -41,6 +43,19 @@ function envFor(o: EnvOptions = {}): ProbeEnv {
 function find(category: Category, path: string): Probe {
 	const row = category.probes.find((probe) => samePath(probe.path, path));
 	if (!row) throw new Error(`no row for ${path}; rows: ${category.probes.map((probe) => probe.path).join(" | ")}`);
+	return row;
+}
+
+/** Literal-path lookup: samePath would collapse a link and its target onto the first row. */
+function literal(path: string): string {
+	const s = resolve(path).replace(/\\/g, "/").replace(/\/+$/, "");
+	return process.platform === "win32" ? s.toLowerCase() : s;
+}
+
+function findLiteral(category: Category, path: string): Probe {
+	const key = literal(path);
+	const row = category.probes.find((probe) => literal(probe.path) === key);
+	if (!row) throw new Error(`no literal row for ${path}; rows: ${category.probes.map((probe) => probe.path).join(" | ")}`);
 	return row;
 }
 
@@ -282,6 +297,52 @@ describe("probeSkills", () => {
 		expect(category.probes.some((probe) => samePath(probe.path, tree.path("cwd/.omo/skills/a/inner/SKILL.md")))).toBe(false);
 		expect(category.probes.some((probe) => samePath(probe.path, tree.path("cwd/.omo/skills/.hidden/SKILL.md")))).toBe(false);
 		expect(category.probes.some((probe) => samePath(probe.path, tree.path("cwd/.omo/skills/node_modules/pkg/SKILL.md")))).toBe(false);
+	});
+
+	test("link case: a SKILL.md reached by a directory link is shadowed by the literally loaded file", () => {
+		tree = makeTree({
+			".git": null,
+			"home/.agents/skills/x/SKILL.md": "---\nname: x\ndescription: d\n---\nbody\n",
+			"agent/skills": null,
+		});
+		const winner = tree.path("home/.agents/skills/x/SKILL.md");
+		symlinkSync(tree.path("home/.agents/skills/x"), tree.path("agent/skills/x"), process.platform === "win32" ? "junction" : "dir");
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([{ name: "x", filePath: winner }], []) };
+		const category = probeSkills(envFor({ senpi }));
+
+		expect(findLiteral(category, winner).status).toBe("loaded");
+		expect(findLiteral(category, winner).reason).toBe("스킬");
+		const linked = findLiteral(category, tree.path("agent/skills/x/SKILL.md"));
+		expect(linked.status).toBe("shadowed");
+		expect(linked.reason).toBe("같은 파일(링크)로 이미 들어옴");
+		expect(linked.winner).toBe(winner);
+		expect(linked.problem).toContain("링크로 같은 스킬이 두 곳에 있음");
+		expect(linked.problem).toContain("~/.agents/skills/x가 이김");
+	});
+
+	test("every loaded row carries a non-empty reason", () => {
+		tree = makeTree({
+			".git": null,
+			"cwd/.omo/skills/alpha/SKILL.md": SKILL_MD,
+			"agent/skills/beta/SKILL.md": SKILL_MD,
+		});
+		const t = tree;
+		const senpi: SenpiApi = {
+			loadSkills: () =>
+				loadSkillsReturning(
+					[
+						{ name: "alpha", filePath: t.path("cwd/.omo/skills/alpha/SKILL.md") },
+						{ name: "beta", filePath: t.path("agent/skills/beta/SKILL.md") },
+					],
+					[],
+				),
+		};
+		const category = probeSkills(envFor({ senpi }));
+
+		const loaded = category.probes.filter((probe) => probe.status === "loaded");
+		expect(loaded.length).toBeGreaterThan(0);
+		for (const row of loaded) expect(row.reason.length).toBeGreaterThan(0);
+		expect(findLiteral(category, t.path("cwd/.omo/skills")).reason).toBe("폴더 검색");
 	});
 
 	test("category id and label match the contract", () => {

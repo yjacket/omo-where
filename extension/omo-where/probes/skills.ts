@@ -2,9 +2,9 @@
 // Statuses come from env.senpi.loadSkills (host) when present, else from env.live.skills.
 // The probe's own tables only decide the candidate locations, the 없음 rows and the reason strings.
 import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import type { Category, Probe, ProbeEnv, Scope, Status } from "../model.ts";
-import { LIVE_PROBLEM, samePath } from "../model.ts";
+import { LIVE_PROBLEM, normPath, samePath } from "../model.ts";
 
 const CONFIG_DIR_NAME = ".omo";
 const MAX_ANCESTORS = 64;
@@ -21,6 +21,20 @@ type SkillInfo = { readonly name: string; readonly filePath: string };
 function slashKey(path: string): string {
 	const s = path.replace(/\\/g, "/").replace(/\/+$/, "");
 	return process.platform === "win32" ? s.toLowerCase() : s;
+}
+
+/** Literal comparison key: path.resolve, slashes, drive-letter case; never follows links. */
+function literalKey(path: string): string {
+	const s = resolvePath(path).replace(/\\/g, "/").replace(/\/+$/, "");
+	return process.platform === "win32" ? s.toLowerCase() : s;
+}
+
+/** Shortens a path under home to "~/..." for user-facing text. */
+function shortHome(path: string, home: string): string {
+	const shown = path.replace(/\\/g, "/");
+	const base = home.replace(/\\/g, "/").replace(/\/+$/, "");
+	if (slashKey(path) === slashKey(home)) return "~";
+	return slashKey(path).startsWith(`${slashKey(home)}/`) ? `~${shown.slice(base.length)}` : shown;
 }
 
 function isUnder(child: string, parent: string): boolean {
@@ -199,8 +213,14 @@ export function probeSkills(env: ProbeEnv): Category {
 			warned.set(slashKey(diagnostic.path), summarizeWarning(diagnostic.message));
 		}
 	}
-	const isLoaded = (file: string): boolean => loadedFiles.some((skill) => samePath(skill.filePath, file));
-	const isLive = (file: string): boolean => (liveSkills ?? []).some((skill) => samePath(skill.filePath, file));
+	// Loaded/live marks use the literal path: the harness keeps the first literal path even for a link.
+	const isLoaded = (file: string): boolean => loadedFiles.some((skill) => literalKey(skill.filePath) === literalKey(file));
+	const isLive = (file: string): boolean => (liveSkills ?? []).some((skill) => literalKey(skill.filePath) === literalKey(file));
+	const loadedByReal = new Map<string, SkillInfo>();
+	for (const skill of loadedFiles) {
+		const real = normPath(skill.filePath);
+		if (!loadedByReal.has(real)) loadedByReal.set(real, skill);
+	}
 	const diskSkills: string[] = [];
 
 	const emitSkill = (file: string, scope: Scope | undefined, gated: boolean): void => {
@@ -223,10 +243,23 @@ export function probeSkills(env: ProbeEnv): Category {
 				path: file,
 				kind: "file",
 				status: "loaded",
-				reason: "",
+				reason: "스킬",
 				scope,
 				...(stale ? { live: "disk-only" } : {}),
 				...(warning !== undefined ? { problem: warning } : stale ? { problem: LIVE_PROBLEM["disk-only"] } : {}),
+			});
+			return;
+		}
+		const loadedReal = loadedByReal.get(normPath(file));
+		if (loadedReal !== undefined && literalKey(loadedReal.filePath) !== literalKey(file)) {
+			col.add({
+				path: file,
+				kind: "file",
+				status: "shadowed",
+				reason: "같은 파일(링크)로 이미 들어옴",
+				scope,
+				winner: loadedReal.filePath,
+				problem: `링크로 같은 스킬이 두 곳에 있음 - ${shortHome(dirname(loadedReal.filePath), env.home)}가 이김`,
 			});
 			return;
 		}
@@ -253,7 +286,7 @@ export function probeSkills(env: ProbeEnv): Category {
 			path: root.path,
 			kind: "dir",
 			status: gated ? "disabled" : "loaded",
-			reason: gated ? "프로젝트 신뢰 안 함" : "",
+			reason: gated ? "프로젝트 신뢰 안 함" : "폴더 검색",
 			scope: root.scope,
 			...(gated && walk.entries.length > 0 ? { problem: "신뢰 안 한 프로젝트에 리소스 있음" } : {}),
 		});
@@ -264,7 +297,7 @@ export function probeSkills(env: ProbeEnv): Category {
 	for (const entry of env.host.resolved?.skills ?? []) {
 		if (roots.some((root) => isUnder(entry.path, root.path))) continue;
 		const scope: Scope = omoAiPath(entry.path) ? "omo 플러그인" : "설정";
-		const reason = entry.enabled ? "" : "설정에서 꺼짐";
+		const reason = entry.enabled ? "스킬" : "설정에서 꺼짐";
 		const status: Status = entry.enabled ? "loaded" : "disabled";
 		const stat = statKind(entry.path);
 		if (stat.kind === "missing") {
@@ -284,7 +317,7 @@ export function probeSkills(env: ProbeEnv): Category {
 			col.add({ path: entry.path, kind: "file", status: "error", reason: "파일이 아님", scope });
 			continue;
 		}
-		col.add({ path: entry.path, kind: "dir", status, reason, scope });
+		col.add({ path: entry.path, kind: "dir", status, reason: entry.enabled ? "폴더 검색" : "설정에서 꺼짐", scope });
 		const walk = walkSkills(entry.path);
 		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope });
 		for (const file of walk.entries) {
@@ -321,10 +354,10 @@ export function probeSkills(env: ProbeEnv): Category {
 
 	if (liveSkills !== undefined) {
 		for (const skill of liveSkills) {
-			if (diskSkills.some((path) => samePath(path, skill.filePath))) continue;
+			if (diskSkills.some((path) => literalKey(path) === literalKey(skill.filePath))) continue;
 			const outside = !roots.some((root) => isUnder(skill.filePath, root.path));
 			const scope: Scope | undefined = outside ? (omoAiPath(skill.filePath) ? "omo 플러그인" : "세션") : undefined;
-			col.add({ path: skill.filePath, kind: "file", status: "loaded", reason: "", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
+			col.add({ path: skill.filePath, kind: "file", status: "loaded", reason: "스킬", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
 		}
 	}
 
