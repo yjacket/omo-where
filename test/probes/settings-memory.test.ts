@@ -17,6 +17,7 @@ type EnvOptions = {
 	globalSettings?: Record<string, unknown>;
 	projectSettings?: Record<string, unknown>;
 	systemPrompt?: string;
+	skills?: readonly { readonly name: string; readonly filePath: string }[];
 	model?: { provider?: string; id?: string };
 };
 
@@ -35,6 +36,7 @@ function envOf(options: EnvOptions): ProbeEnv {
 		},
 		live: {
 			...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
+			...(options.skills !== undefined ? { skills: options.skills } : {}),
 			...(options.model !== undefined ? { model: options.model } : {}),
 		},
 	};
@@ -304,5 +306,96 @@ describe("probeMemory", () => {
 		const row = byPath(category.probes, tree.path("home/.omo/memory/agents/omo-tool-fold-6bb00c96/repo"));
 		expect(row?.status).toBe("missing");
 		expect(row?.reason).toBe("폴더 없음");
+	});
+
+	test("fallback: live skill path under memory home finds the id (세션 스킬 경로로 찾음)", () => {
+		const id = "omo-tool-fold-6bb00c96";
+		const tree = makeTree({
+			[`home/.omo/memory/agents/${id}/repo/system/persona.md`]: "p",
+			[`home/.omo/memory/agents/${id}/repo/skills/memory-discipline/SKILL.md`]: "s",
+		});
+		trees.push(tree);
+		const category = probeMemory(
+			envOf({
+				cwd: tree.path("proj"),
+				agentDir: tree.path("agent"),
+				home: tree.path("home"),
+				skills: [{ name: "memory-discipline", filePath: tree.path(`home/.omo/memory/agents/${id}/repo/skills/memory-discipline/SKILL.md`) }],
+			}),
+		);
+
+		const repo = byPath(category.probes, tree.path(`home/.omo/memory/agents/${id}/repo`));
+		expect(repo?.status).toBe("loaded");
+		expect(repo?.reason).toBe("세션 스킬 경로로 찾음");
+		expect(byPath(category.probes, tree.path(`home/.omo/memory/agents/${id}/repo/system/persona.md`))?.reason).toBe("세션에 투영");
+		expect(category.note ?? "").toContain("세션 스킬 경로");
+	});
+
+	test("fallback: skill path outside the memory home is ignored (none -> missing row)", () => {
+		const tree = makeTree({ "other/agents/agent-x/repo/skills/s/SKILL.md": "s" });
+		trees.push(tree);
+		const category = probeMemory(
+			envOf({
+				cwd: tree.path("proj"),
+				agentDir: tree.path("agent"),
+				home: tree.path("home"),
+				skills: [{ name: "s", filePath: tree.path("other/agents/agent-x/repo/skills/s/SKILL.md") }],
+			}),
+		);
+
+		expect(category.probes.length).toBe(1);
+		expect(category.probes[0]?.reason).toBe("메모리 꺼짐 또는 정보 없음");
+	});
+
+	test("fallback: single folder named <basename(cwd)>- estimates the id (폴더 이름으로 추정)", () => {
+		const tree = makeTree({ "home/.omo/memory/agents/proj-abc123/repo/system/self.md": "x" });
+		trees.push(tree);
+		const category = probeMemory(envOf({ cwd: tree.path("proj"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		const repo = byPath(category.probes, tree.path("home/.omo/memory/agents/proj-abc123/repo"));
+		expect(repo?.status).toBe("loaded");
+		expect(repo?.reason).toBe("폴더 이름으로 추정");
+		expect(byPath(category.probes, tree.path("home/.omo/memory/agents/proj-abc123/repo/system/self.md"))?.reason).toBe("세션에 투영");
+		expect(category.note ?? "").toContain("폴더 이름 추정");
+	});
+
+	test("fallback: folder candidates need a repo dir and the <basename(cwd)>- prefix", () => {
+		const tree = makeTree({ "home/.omo/memory/agents/proj-norepo/system/self.md": "x", "home/.omo/memory/agents/other-abc/repo/system/self.md": "x" });
+		trees.push(tree);
+		const category = probeMemory(envOf({ cwd: tree.path("proj"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		expect(category.probes.length).toBe(1);
+		expect(category.probes[0]?.status).toBe("missing");
+		expect(category.probes[0]?.reason).toBe("메모리 꺼짐 또는 정보 없음");
+	});
+
+	test("fallback: multiple folder candidates -> one missing row per candidate, no id guess", () => {
+		const tree = makeTree({ "home/.omo/memory/agents/proj-one/repo/system/a.md": "a", "home/.omo/memory/agents/proj-two/repo/system/b.md": "b" });
+		trees.push(tree);
+		const category = probeMemory(envOf({ cwd: tree.path("proj"), agentDir: tree.path("agent"), home: tree.path("home") }));
+
+		expect(category.probes.length).toBe(2);
+		for (const row of category.probes) {
+			expect(row.status).toBe("missing");
+			expect(row.reason).toBe("여러 후보 - 세션 정보 없음");
+		}
+		expect(byPath(category.probes, tree.path("home/.omo/memory/agents/proj-one/repo"))).toBeDefined();
+		expect(byPath(category.probes, tree.path("home/.omo/memory/agents/proj-two/repo"))).toBeDefined();
+	});
+
+	test("fallback order: prompt sentinel beats skill paths and folder names", () => {
+		const tree = makeTree({ "home/.omo/memory/agents/prompt-id/repo/system/a.md": "a", "home/.omo/memory/agents/proj-zzz/repo/system/b.md": "b" });
+		trees.push(tree);
+		const category = probeMemory(
+			envOf({
+				cwd: tree.path("proj"),
+				agentDir: tree.path("agent"),
+				home: tree.path("home"),
+				systemPrompt: "<!-- senpi-memory:prompt-id:begin -->",
+				skills: [{ name: "s", filePath: tree.path("home/.omo/memory/agents/skill-id/repo/skills/s/SKILL.md") }],
+			}),
+		);
+
+		expect(byPath(category.probes, tree.path("home/.omo/memory/agents/prompt-id/repo"))?.reason).toBe("메모리 저장소");
 	});
 });

@@ -209,3 +209,15 @@ describe("WhereView", () => {
 		expect(lines.join("\n")).toContain("Esc 뒤로");
 	});
 });
+
+test("every key asks the TUI to redraw, including keys that change nothing", () => {
+	const { report } = fixture();
+	{
+		let renders = 0;
+		const view = new WhereView({ report, theme: plainTheme, height: () => 20, onClose: () => {}, onEdit: () => {}, onRescan: () => {}, requestRender: () => { renders += 1; } });
+		view.handleInput("\x1b[B");
+		view.handleInput("\x1b[B");
+		view.handleInput("x");
+		expect(renders).toBe(3);
+	}
+});

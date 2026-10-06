@@ -162,17 +162,39 @@ describe("probeSkills", () => {
 		expect(calls[0].skillPaths.some((path) => samePath(path, root))).toBe(false);
 	});
 
-	test("Claude Code case: ~/.claude/skills rows are disabled", () => {
+	test("Claude Code case: the folder is one disabled row and its skills get no rows", () => {
 		tree = makeTree({ ".git": null, "home/.claude/skills/cc/SKILL.md": SKILL_MD });
 		const category = probeSkills(envFor());
 
-		const row = find(category, tree.path("home/.claude/skills/cc/SKILL.md"));
+		const dir = tree.path("home/.claude/skills");
+		const row = find(category, dir);
+		expect(row.kind).toBe("dir");
 		expect(row.status).toBe("disabled");
 		expect(row.scope).toBe("Claude Code 폴더");
-		expect(row.reason).toBe("Claude Code 폴더 - omo는 안 읽음");
+		expect(row.reason).toBe("Claude Code 폴더 - omo는 안 읽음 · 스킬 1개");
+		expect(category.probes.some((probe) => literal(probe.path).startsWith(`${literal(dir)}/`))).toBe(false);
 	});
 
-	test("live case: a live session skill missing from disk becomes a session-only row", () => {
+	test("Claude Code folder counts recursively found skills in one row", () => {
+		tree = makeTree({
+			".git": null,
+			"home/.claude/skills/a/SKILL.md": SKILL_MD,
+			"home/.claude/skills/b/SKILL.md": SKILL_MD,
+			"home/.claude/skills/nest/deep/c/SKILL.md": SKILL_MD,
+		});
+		const category = probeSkills(envFor());
+
+		const dir = tree.path("home/.claude/skills");
+		const rows = category.probes.filter((probe) => literal(probe.path) === literal(dir));
+		expect(rows).toHaveLength(1);
+		expect(rows[0].kind).toBe("dir");
+		expect(rows[0].status).toBe("disabled");
+		expect(rows[0].scope).toBe("Claude Code 폴더");
+		expect(rows[0].reason.endsWith("스킬 3개")).toBe(true);
+		expect(category.probes.some((probe) => literal(probe.path).startsWith(`${literal(dir)}/`))).toBe(false);
+	});
+
+	test("live case: live session skills missing from disk become session-only rows", () => {
 		tree = makeTree({ ".git": null });
 		const ghost = tree.path("elsewhere/ghost/SKILL.md");
 		const pluginGhost = tree.path("prod/node_modules/omo-ai/skills/bundled/SKILL.md");
@@ -186,11 +208,68 @@ describe("probeSkills", () => {
 		const category = probeSkills(envFor({ senpi, live }));
 
 		const row = find(category, ghost);
-		expect(row.status).toBe("loaded");
+		expect(row.status).toBe("missing");
 		expect(row.live).toBe("session-only");
 		expect(row.problem).toBe(LIVE_PROBLEM["session-only"]);
 		expect(row.scope).toBe("세션");
 		expect(find(category, pluginGhost).scope).toBe("omo 플러그인");
+	});
+
+	test("live case: an existing plugin skill outside every root is loaded with no live mark", () => {
+		tree = makeTree({ ".git": null, "prod/node_modules/omo-ai/plugin/skills/x/SKILL.md": SKILL_MD });
+		const file = tree.path("prod/node_modules/omo-ai/plugin/skills/x/SKILL.md");
+		const live: LiveState = { skills: [{ name: "x", filePath: file }] };
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([], []) };
+		const category = probeSkills(envFor({ senpi, live }));
+
+		const row = find(category, file);
+		expect(row.status).toBe("loaded");
+		expect(row.scope).toBe("omo 플러그인");
+		expect(row.reason).toBe("omo 플러그인 스킬");
+		expect(row.live).toBeUndefined();
+		expect(row.problem).toBeUndefined();
+	});
+
+	test("live case: an existing memory skill is loaded with the 메모리 스킬 reason", () => {
+		tree = makeTree({ ".git": null, "home/.omo/memory/agents/abc/repo/skills/y/SKILL.md": SKILL_MD });
+		const file = tree.path("home/.omo/memory/agents/abc/repo/skills/y/SKILL.md");
+		const live: LiveState = { skills: [{ name: "y", filePath: file }] };
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([], []) };
+		const category = probeSkills(envFor({ senpi, live }));
+
+		const row = find(category, file);
+		expect(row.status).toBe("loaded");
+		expect(row.scope).toBe("세션");
+		expect(row.reason).toBe("메모리 스킬");
+		expect(row.live).toBeUndefined();
+	});
+
+	test("live case: an existing builtin runtime skill is loaded with the 내장 스킬 reason", () => {
+		tree = makeTree({ ".git": null, "home/.omo/agent/runtime/hash/node_modules/pkg/src/skill/z/SKILL.md": SKILL_MD });
+		const file = tree.path("home/.omo/agent/runtime/hash/node_modules/pkg/src/skill/z/SKILL.md");
+		const live: LiveState = { skills: [{ name: "z", filePath: file }] };
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([], []) };
+		const category = probeSkills(envFor({ senpi, live }));
+
+		const row = find(category, file);
+		expect(row.status).toBe("loaded");
+		expect(row.scope).toBe("내장");
+		expect(row.reason).toBe("내장 스킬");
+		expect(row.live).toBeUndefined();
+	});
+
+	test("live case: a live skill file that is gone is missing with the session-only mark", () => {
+		tree = makeTree({ ".git": null });
+		const gone = tree.path("elsewhere/gone/SKILL.md");
+		const live: LiveState = { skills: [{ name: "gone", filePath: gone }] };
+		const senpi: SenpiApi = { loadSkills: () => loadSkillsReturning([], []) };
+		const category = probeSkills(envFor({ senpi, live }));
+
+		const row = find(category, gone);
+		expect(row.status).toBe("missing");
+		expect(row.live).toBe("session-only");
+		expect(row.problem).toBe(LIVE_PROBLEM["session-only"]);
+		expect(row.scope).toBe("세션");
 	});
 
 	test("fallback case: without loadSkills the loaded rows come from env.live and the note says 세션 기준", () => {

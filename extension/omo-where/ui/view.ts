@@ -15,6 +15,8 @@ export type WhereViewOptions = {
 	readonly onClose: () => void;
 	readonly onEdit: (path: string) => void;
 	readonly onRescan: () => void;
+	/** Asks the TUI to redraw; pi-tui does not redraw an overlay after input on its own. */
+	readonly requestRender?: () => void;
 };
 
 /** Initial focus is the category column: ↓ picks a category, ⇥ moves to its rows. */
@@ -51,6 +53,7 @@ export class WhereView {
 	private readonly onClose: () => void;
 	private readonly onEdit: (path: string) => void;
 	private readonly onRescan: () => void;
+	private readonly requestRender: (() => void) | undefined;
 	private state: ViewState = initialState();
 	/** True after an edit or rescan request; further e/r keys are ignored until setReport(). */
 	private busy = false;
@@ -62,6 +65,7 @@ export class WhereView {
 		this.onClose = options.onClose;
 		this.onEdit = options.onEdit;
 		this.onRescan = options.onRescan;
+		this.requestRender = options.requestRender;
 	}
 
 	render(width: number): string[] {
@@ -69,6 +73,11 @@ export class WhereView {
 	}
 
 	handleInput(data: string): void {
+		this.applyInput(data);
+		this.requestRender?.();
+	}
+
+	private applyInput(data: string): void {
 		const key = decodeKey(data);
 		if (this.busy && (key === "e" || key === "r")) return;
 		const result = reduce(this.state, key, this.report, this.height());

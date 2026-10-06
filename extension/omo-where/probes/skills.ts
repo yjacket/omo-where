@@ -47,6 +47,15 @@ function omoAiPath(path: string): boolean {
 	return slashKey(path).includes("/node_modules/omo-ai/");
 }
 
+/** Scope and reason for a live skill by where its file lives (already slash-normalized, case-insensitive on win32). */
+function liveSkillLabel(path: string): { scope: Scope; reason: string } {
+	const p = slashKey(path);
+	if (p.includes("/node_modules/omo-ai/")) return { scope: "omo 플러그인", reason: "omo 플러그인 스킬" };
+	if (p.includes("/.omo/agent/runtime/")) return { scope: "내장", reason: "내장 스킬" };
+	if (/\/agents\/[^/]+\/repo\/skills\//.test(p)) return { scope: "세션", reason: "메모리 스킬" };
+	return { scope: "세션", reason: "확장이 넣은 스킬" };
+}
+
 function describe(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -326,17 +335,11 @@ export function probeSkills(env: ProbeEnv): Category {
 		}
 	}
 
-	const emitForeign = (dir: string, scope: Scope, reason: string): void => {
-		if (statKind(dir).kind !== "dir") return;
-		col.add({ path: dir, kind: "dir", status: "disabled", reason, scope });
-		const walk = walkSkills(dir);
-		for (const problem of walk.problems) col.add({ path: problem.path, kind: "dir", status: "error", reason: problem.reason, scope });
-		for (const file of walk.entries) {
-			diskSkills.push(file);
-			col.add({ path: file, kind: "file", status: "disabled", reason, scope });
-		}
-	};
-	emitForeign(join(env.home, ".claude", "skills"), "Claude Code 폴더", "Claude Code 폴더 - omo는 안 읽음");
+	const claudeSkills = join(env.home, ".claude", "skills");
+	if (statKind(claudeSkills).kind === "dir") {
+		const walk = walkSkills(claudeSkills);
+		col.add({ path: claudeSkills, kind: "dir", status: "disabled", scope: "Claude Code 폴더", reason: `Claude Code 폴더 - omo는 안 읽음 · 스킬 ${walk.entries.length}개` });
+	}
 	for (const agentRoot of [join(env.home, ".pi", "agent"), join(env.home, ".senpi", "agent")]) {
 		if (samePath(agentRoot, env.agentDir) || statKind(agentRoot).kind !== "dir") continue;
 		const foreignScope: Scope = "다른 에이전트 폴더";
@@ -355,9 +358,12 @@ export function probeSkills(env: ProbeEnv): Category {
 	if (liveSkills !== undefined) {
 		for (const skill of liveSkills) {
 			if (diskSkills.some((path) => literalKey(path) === literalKey(skill.filePath))) continue;
-			const outside = !roots.some((root) => isUnder(skill.filePath, root.path));
-			const scope: Scope | undefined = outside ? (omoAiPath(skill.filePath) ? "omo 플러그인" : "세션") : undefined;
-			col.add({ path: skill.filePath, kind: "file", status: "loaded", reason: "스킬", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
+			const { scope, reason } = liveSkillLabel(skill.filePath);
+			if (existsSync(skill.filePath)) {
+				col.add({ path: skill.filePath, kind: "file", status: "loaded", reason, scope });
+				continue;
+			}
+			col.add({ path: skill.filePath, kind: "file", status: "missing", reason: "스킬", scope, live: "session-only", problem: LIVE_PROBLEM["session-only"] });
 		}
 	}
 

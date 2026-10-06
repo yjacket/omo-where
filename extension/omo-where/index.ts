@@ -168,6 +168,7 @@ async function whereHandler(_args: string, ctx: Ctx): Promise<void> {
 						void rescan(result.ok ? "바뀐 내용은 /reload 후 적용" : result.message);
 					},
 					onRescan: () => void rescan(),
+					requestRender: () => tui.requestRender(),
 				});
 				return view;
 			},
