@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "OMO/Senpi extension: /where shows where every injected instruction, skill, extension and setting came from, and what was searched but not loaded.",
+  "pi": {
+    "extensions": [
+      "extension/omo-where/index.ts"
+    ]
+  },
   "scripts": {
     "test": "bun test"
   },
