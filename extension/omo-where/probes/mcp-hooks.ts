@@ -156,7 +156,7 @@ export const probeMcp: ProbeFn = (env) => {
 	return {
 		id: "mcp",
 		label: "MCP",
-		note: "MCP 파일 병합 순서, 서버별 밀림, enabled 판정은 하네스 공개 함수가 없어 직접 판정함",
+		note: "파일 병합 순서·서버별 밀림·켜짐은 하네스 규칙을 따라 직접 판정함",
 		probes,
 	};
 };
@@ -216,7 +216,7 @@ export const probeHooks: ProbeFn = (env) => {
 	return {
 		id: "hooks",
 		label: "훅",
-		note: "훅 소스 순서와 전역/프로젝트 기본 경로는 하네스 공개 함수가 없어 직접 판정함",
+		note: "훅 순서와 기본 경로는 하네스 규칙을 따라 직접 판정함",
 		probes,
 	};
 };

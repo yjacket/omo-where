@@ -240,7 +240,7 @@ export const probeExtensions: ProbeFn = (env) => {
 	return {
 		id: "extensions",
 		label: "확장",
-		note: "확장 자동 탐색 규칙(진입 파일 이름, 내장 설정)은 하네스 공개 함수가 없어 직접 판정함",
+		note: "진입 파일·내장 설정은 하네스 규칙을 따라 직접 판정함",
 		probes,
 	};
 };

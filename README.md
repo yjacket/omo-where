@@ -6,26 +6,30 @@ An OMO/Senpi TUI extension. Type `/where` and an overlay lists every place the h
 
 ## What you see
 
-Left column: categories with their problem count. Right column: every candidate path in harness priority order, with its status and reason. The line above the footer explains the selected row. A real capture at 80 columns (skills, middle rows cut):
+Left column: categories; a number appears only when some rows need attention. At the top of the right column, the bold line says what the category is and the dim line how it is judged. Below them every candidate follows in harness priority order. A folder the harness searched is an unnumbered line, what it found inside follows by name, and each group has a blank line before and after it. Numbers count only the entries themselves. Rows in use show just their name; every other row gets its status word (table below) after the name, or only its reason when the reason already says the status, like `폴더 없음`. The line under the rule spells out the selected row's full path and reason. A real capture at 80 columns (skills, middle rows cut):
 
 ```
-where · 문제 2개 · 들어옴 134 · 없음 39 · 밀림 2 · 꺼짐 20
-시스템 프롬프트 0     │같은 이름이면 먼저 찾은 쪽이 이김
-지침 파일 0           │1. 없음 ./.omo/skills · 폴더 없음
-스킬 2                │2. 없음 ./.agents/skills · 폴더 없음
-확장 0                │3. 없음 ./.pi/skills · 폴더 없음
-규칙 0                │4. 들어옴 ~/.omo/agent/skills · 폴더 검색
-프롬프트 템플릿 0     │5. 들어옴 ~/.omo/agent/skills/orca-cli · 스킬
-테마 0                │6. 들어옴 ~/.omo/agent/skills/omomeow · 스킬
-MCP 0                 │7. 들어옴 ~/.agents/skills · 폴더 검색
-훅 0                  │8. 들어옴 ~/.agents/skills/visual-board · 스킬
-메모리 0              │9. 들어옴 ~/.agents/skills/orchestration · 스킬
-설정 0                │10. 밀림 ~/.agents/skills/orca-cli · 같은 파일(링크)로 …
-                      │11. 들어옴 ~/.agents/skills/find-skills · 스킬
-                      │12. 들어옴 ~/.agents/skills/computer-use · 스킬
-                      │13. 꺼짐 ~/.claude/skills · Claude Code 폴더 - omo는 안 …
-                      │14. 꺼짐 ~/.pi/agent/skills · 지금 세션은 이 폴더를 안 …
+where · 문제 4개 · 사용 136 · 없음 38 · 밀림 3 · 꺼짐 20
 
+ 시스템 프롬프트      │ 모델이 필요할 때 읽는 SKILL.md · 이름과 설명만 시스템 …
+ 지침 파일            │ 같은 이름이면 먼저 찾은 쪽이 이김
+ 스킬               1 │
+ 확장               3 │ ./.omo/skills  폴더 없음
+ 규칙                 │ ./.agents/skills  폴더 없음
+ 프롬프트 템플릿      │ ./.pi/skills  폴더 없음
+ 테마                 │
+ MCP                  │ ~/.omo/agent/skills  전역
+ 훅                   │    1. orca-cli
+ 메모리               │    2. omomeow
+ 설정                 │
+                      │ ~/.agents/skills  전역
+                      │    3. visual-board
+                      │    4. orchestration
+                      │    5. orca-cli  링크 · 같은 파일(링크)로 이미 들어옴
+                      │    6. find-skills
+                      │    7. dori-mode
+────────────────────────────────────────────────────────────────────────────────
+./.omo/skills · 폴더 없음
 Enter 열기 · w 이긴 쪽 · e 편집 · f 문제만 · r 다시 읽기 · q 닫기
 ```
 
@@ -63,13 +67,28 @@ Viewer footer:
 
 ## Categories and statuses
 
-Categories, in order: 시스템 프롬프트, 지침 파일, 스킬, 확장, 규칙, 프롬프트 템플릿, 테마, MCP, 훅, 메모리, 설정.
+Categories, in this order:
+
+| Category | Meaning |
+|---|---|
+| 시스템 프롬프트 | The whole prompt the model got this session, and its pieces; context files and the skill list are merged into it |
+| 지침 파일 | AGENTS.md / CLAUDE.md, one per folder, pasted into the system prompt as is |
+| 스킬 | SKILL.md files the model reads when needed; only name and description go into the system prompt |
+| 확장 | Code that adds commands, tools and UI; loaded at session start |
+| 규칙 | Instruction files added during work when their condition matches |
+| 프롬프트 템플릿 | Prompt files invoked as /name |
+| 테마 | TUI color theme files |
+| MCP | MCP server configs the model uses as tools |
+| 훅 | Commands that run automatically at set points (hooks.json) |
+| 메모리 | Memory files that outlive the session |
+| 설정 | Harness settings files and this session's setting values |
 
 | Status | Label | Meaning |
 |---|---|---|
-| loaded | 들어옴 | Found and used by the harness |
+| loaded | 사용 | Found and used by the harness |
 | missing | 없음 | Searched, nothing there |
 | shadowed | 밀림 | Found, but a higher-priority entry won |
+| shadowed (link) | 링크 | The same file again through a link; by design, not counted as a problem |
 | disabled | 꺼짐 | Found but not read: turned off in settings, an untrusted project, a folder omo does not read (Claude Code, `~/.pi`, `~/.senpi`), or a file that is not an extension entry |
 | error | 오류 | Found, failed to load or parse |
 

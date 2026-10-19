@@ -395,8 +395,8 @@ describe("probeSkills", () => {
 		expect(linked.status).toBe("shadowed");
 		expect(linked.reason).toBe("같은 파일(링크)로 이미 들어옴");
 		expect(linked.winner).toBe(winner);
-		expect(linked.problem).toContain("링크로 같은 스킬이 두 곳에 있음");
-		expect(linked.problem).toContain("~/.agents/skills/x가 이김");
+		expect(linked.linked).toBe(true);
+		expect(linked.problem).toBeUndefined();
 	});
 
 	test("every loaded row carries a non-empty reason", () => {

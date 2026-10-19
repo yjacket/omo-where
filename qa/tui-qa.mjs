@@ -11,6 +11,7 @@ const WHERE_EXT = "C:/dev/omo/omo-where/extension/omo-where/index.ts";
 const DUMP_EXT = "C:/dev/omo/omo-where/qa/dump-ctx.ts";
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const XTERM = "https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/";
+const UNICODE11 = "https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.9.0/";
 
 const args = {};
 for (let i = 2; i < process.argv.length; i++) {
@@ -115,10 +116,13 @@ const until = async (fn, ms, what) => {
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${XTERM}css/xterm.css">
 <script src="${XTERM}lib/xterm.js"></script>
+<script src="${UNICODE11}lib/addon-unicode11.js"></script>
 <style>html,body{margin:0;background:#000}#t{display:inline-block}</style></head>
 <body><div id="t"></div><script>
 window.term = new Terminal({cols:${cols},rows:${rows},fontSize:14,scrollback:0,allowProposedApi:true,fontFamily:"Consolas, 'Malgun Gothic', monospace"});
 term.open(document.getElementById("t"));
+// Orca and other modern xterm.js terminals use Unicode 11 widths: emoji take 2 cells.
+term.loadAddon(new Unicode11Addon.Unicode11Addon()); term.unicode.activeVersion = "11";
 window.__ready = true;
 </script></body></html>`;
 

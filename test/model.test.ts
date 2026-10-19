@@ -28,7 +28,7 @@ test("problem counting, filtering and the summary line", () => {
 	expect(problemCount(r.categories[0]!)).toBe(1);
 	expect(problemCount(r.categories[1]!)).toBe(1);
 	expect(filterProblems(r.categories[0]!).probes.map((p) => p.id)).toEqual(["2"]);
-	expect(summaryLine(r)).toBe("문제 2개 · 들어옴 1 · 없음 1 · 밀림 1 · 꺼짐 0");
+	expect(summaryLine(r)).toBe("문제 2개 · 사용 1 · 없음 1 · 밀림 1 · 꺼짐 0");
 });
 
 test("builtin and synthetic extension paths", () => {

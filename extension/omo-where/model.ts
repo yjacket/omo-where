@@ -14,6 +14,7 @@ export type Probe = {
 	readonly reason: string; // Korean, label level
 	readonly scope?: Scope;
 	readonly winner?: string; // path that won, when status is "shadowed"
+	readonly linked?: boolean; // shadowed only because the winner is the same file reached through a link
 	readonly problem?: string; // Korean problem text when the row needs attention
 	readonly live?: Live;
 	readonly text?: string; // virtual content for the viewer
@@ -55,7 +56,9 @@ export type ProbeEnv = {
 	readonly live: LiveState; // every member may be undefined
 };
 export type ProbeFn = (env: ProbeEnv) => Category | Promise<Category>;
-export const STATUS_LABEL: Readonly<Record<Status, string>> = { loaded: "들어옴", missing: "없음", shadowed: "밀림", disabled: "꺼짐", error: "오류" };
+export const STATUS_LABEL: Readonly<Record<Status, string>> = { loaded: "사용", missing: "없음", shadowed: "밀림", disabled: "꺼짐", error: "오류" };
+/** Status word for a row shadowed only by the same file through a link; two syllables like every STATUS_LABEL. */
+export const LINK_LABEL = "링크";
 export const LIVE_LABEL: Readonly<Record<Exclude<Live, "match">, string>> = { "session-only": "세션에만", "disk-only": "디스크에만", changed: "바뀜" };
 export const LIVE_PROBLEM: Readonly<Record<Exclude<Live, "match">, string>> = {
 	"session-only": "세션에는 있지만 지금 디스크에 없음 - 지운 뒤 /reload 안 함?",
@@ -82,5 +85,6 @@ export function summaryLine(r: Report): string {
 	const all = r.categories.flatMap((c) => c.probes);
 	const n = (s: Status) => all.filter((p) => p.status === s).length;
 	const problems = r.categories.reduce((t, c) => t + problemCount(c), 0);
-	return `문제 ${problems}개 · 들어옴 ${n("loaded")} · 없음 ${n("missing")} · 밀림 ${n("shadowed")} · 꺼짐 ${n("disabled")}`;
+	const tally = (s: Status) => `${STATUS_LABEL[s]} ${n(s)}`;
+	return `문제 ${problems}개 · ${tally("loaded")} · ${tally("missing")} · ${tally("shadowed")} · ${tally("disabled")}`;
 }

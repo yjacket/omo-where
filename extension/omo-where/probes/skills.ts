@@ -22,14 +22,6 @@ function literalKey(path: string): string {
 	return process.platform === "win32" ? s.toLowerCase() : s;
 }
 
-/** Shortens a path under home to "~/..." for user-facing text. */
-function shortHome(path: string, home: string): string {
-	const shown = path.replace(/\\/g, "/");
-	const base = home.replace(/\\/g, "/").replace(/\/+$/, "");
-	if (slashKey(path) === slashKey(home)) return "~";
-	return slashKey(path).startsWith(`${slashKey(home)}/`) ? `~${shown.slice(base.length)}` : shown;
-}
-
 function omoAiPath(path: string): boolean {
 	return slashKey(path).includes("/node_modules/omo-ai/");
 }
@@ -208,7 +200,8 @@ export function probeSkills(env: ProbeEnv): Category {
 				reason: "같은 파일(링크)로 이미 들어옴",
 				scope,
 				winner: loadedReal.filePath,
-				problem: `링크로 같은 스킬이 두 곳에 있음 - ${shortHome(dirname(loadedReal.filePath), env.home)}가 이김`,
+				// By design, not a problem: the same skill reached twice through a link.
+				linked: true,
 			});
 			return;
 		}

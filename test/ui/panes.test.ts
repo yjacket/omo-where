@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { LIVE_LABEL, STATUS_LABEL, summaryLine, type Category, type Probe, type Report } from "../../extension/omo-where/model.ts";
+import { LINK_LABEL, LIVE_LABEL, STATUS_LABEL, summaryLine, type Category, type Probe, type Report } from "../../extension/omo-where/model.ts";
 import { renderPanes, type PaneTheme, type ViewerLines } from "../../extension/omo-where/ui/panes.ts";
 import type { ViewerState, ViewState } from "../../extension/omo-where/ui/state.ts";
 import { makeTree, type Tree } from "../helpers/tree.ts";
@@ -108,12 +108,13 @@ describe("renderPanes", () => {
 		expect(lines[0]).toContain(summaryLine(report));
 	});
 
-	test("theme colors case: 들어옴 uses success, 밀림 and 꺼짐 use warning, 오류 uses error", () => {
+	test("theme colors case: rows in use carry no status word, 밀림 and 꺼짐 use warning, 오류 uses error", () => {
 		const { report } = buildFixture();
 		const spy = spyTheme();
-		renderPanes(report, view(), 120, 24, spy.theme);
+		const lines = renderPanes(report, view({ pane: "cats" }), 120, 24, plainTheme);
+		renderPanes(report, view({ pane: "cats" }), 120, 24, spy.theme);
 		const has = (color: string, needle: string): boolean => spy.fgCalls.some((call) => call.color === color && call.text.includes(needle));
-		expect(has("success", STATUS_LABEL.loaded)).toBe(true);
+		expect(lines.map(rightOf).find((line) => line.includes("alpha"))).toBe("1. ./.omo/skills/alpha  찾음");
 		expect(has("warning", STATUS_LABEL.shadowed)).toBe(true);
 		expect(has("warning", STATUS_LABEL.disabled)).toBe(true);
 		expect(has("error", STATUS_LABEL.error)).toBe(true);
@@ -123,9 +124,8 @@ describe("renderPanes", () => {
 		const { report } = buildFixture();
 		const spy = spyTheme();
 		renderPanes(report, view({ pane: "rows", row: 1 }), 120, 24, spy.theme);
-		expect(spy.boldCalls.some((text) => text.includes(STATUS_LABEL.shadowed))).toBe(true);
+		expect(spy.boldCalls.some((text) => text.includes("claude-skill"))).toBe(true);
 		expect(spy.fgCalls.some((call) => call.color === "accent" && call.text.includes("claude-skill"))).toBe(true);
-		expect(spy.fgCalls.some((call) => call.color === "warning" && call.text.includes(STATUS_LABEL.shadowed))).toBe(true);
 	});
 
 	test("live mark case: a non-match live row shows the live label", () => {
@@ -153,6 +153,7 @@ describe("renderPanes", () => {
 	test("detail case: the detail line shows the selected row's problem and winner", () => {
 		const { report } = buildFixture();
 		const lines = renderPanes(report, view({ row: 1 }), 200, 24, plainTheme);
+		expect(lines[22]).toContain("~/.claude/skills/claude-skill · 밀림 · 프로젝트가 이김");
 		expect(lines[22]).toContain("문제: 이름이 겹쳐 밀림");
 		expect(lines[22]).toContain("이긴 쪽:");
 	});
@@ -161,19 +162,23 @@ describe("renderPanes", () => {
 		const { report } = buildFixture();
 		const all = renderPanes(report, view(), 120, 24, plainTheme);
 		const filtered = renderPanes(report, view({ problemsOnly: true }), 120, 24, plainTheme);
-		expect(filtered.join("\n")).toContain(STATUS_LABEL.shadowed);
-		expect(filtered.join("\n")).toContain(STATUS_LABEL.error);
-		expect(filtered.join("\n")).not.toContain(`1. ${STATUS_LABEL.loaded}`);
-		expect(all[1]).toContain("스킬 2");
-		expect(filtered[1]).toContain("스킬 2");
+		const rightPane = (lines: string[]): string => lines.slice(1, -2).map((line) => line.split("│")[1] ?? "").join("\n");
+		expect(rightPane(filtered)).toContain(STATUS_LABEL.shadowed);
+		expect(rightPane(filtered)).toContain(STATUS_LABEL.error);
+		expect(rightPane(filtered)).not.toContain("alpha");
+		expect(rightPane(all)).toContain("alpha");
+		expect(all[2]).toMatch(/스킬 +2 │/);
+		expect(filtered[2]).toMatch(/스킬 +2 │/);
 	});
 
-	test("category note and error case: shown as the first right-pane line", () => {
+	test("category about, note and error case: what the category is comes first, then its note or error, then a blank line", () => {
 		const { report } = buildFixture();
 		const skills = renderPanes(report, view({ cat: 0 }), 140, 24, plainTheme);
 		const rules = renderPanes(report, view({ cat: 1 }), 140, 24, plainTheme);
-		expect(skills[1]).toContain("이름이 겹치면 먼저 온 곳이 이깁니다");
-		expect(rules[1]).toContain("규칙 후보를 읽지 못했습니다");
+		expect(rightOf(skills[2])).toBe("모델이 필요할 때 읽는 SKILL.md · 이름과 설명만 시스템 프롬프트에 들어감");
+		expect(rightOf(skills[3])).toBe("이름이 겹치면 먼저 온 곳이 이깁니다");
+		expect(rightOf(skills[4])).toBe("");
+		expect(rightOf(rules[3])).toBe("규칙 후보를 읽지 못했습니다");
 	});
 
 	test("CJK path case: wide paths with long Korean reasons stay within width 60", () => {
@@ -184,7 +189,7 @@ describe("renderPanes", () => {
 	test("skill suffix case: a SKILL.md path drops the /SKILL.md suffix", () => {
 		const { report, paths } = buildFixture();
 		const text = renderPanes(report, view(), 200, 24, plainTheme).join("\n");
-		expect(text).not.toContain("SKILL.md");
+		expect(text).not.toContain("/SKILL.md");
 		expect(text).toContain("alpha");
 		expect(paths.skillMd).toContain("SKILL.md");
 	});
@@ -212,6 +217,94 @@ describe("renderPanes", () => {
 		const lines = renderPanes(report, view({ pane: "viewer", viewer }), 120, 24, plainTheme, () => []);
 		expect(lines[23]).toContain("Esc 뒤로");
 	});
+});
+
+/** A skills-like category: a folder with rows, a missing folder, rows sharing a parent, a virtual row. */
+function groupedReport(report: Report): Report {
+	const cwd = report.cwd;
+	const home = report.agentDir.replace(/[\\/]\.omo[\\/]agent$/, "");
+	const probes: Probe[] = [
+		{ id: "d", rank: 1, path: `${cwd}/.omo/skills`, kind: "dir", status: "loaded", reason: "폴더 검색", scope: "프로젝트" },
+		{ id: "a", rank: 2, path: `${cwd}/.omo/skills/alpha/SKILL.md`, kind: "file", status: "loaded", reason: "스킬" },
+		{ id: "b", rank: 3, path: `${cwd}/.omo/skills/beta/SKILL.md`, kind: "file", status: "shadowed", reason: "같은 파일(링크)로 이미 들어옴", linked: true },
+		{ id: "m", rank: 4, path: `${cwd}/.pi/skills`, kind: "dir", status: "missing", reason: "폴더 없음" },
+		{ id: "p", rank: 5, path: `${home}/.bun/x/skills/one/SKILL.md`, kind: "file", status: "loaded", reason: "스킬", scope: "omo 플러그인" },
+		{ id: "q", rank: 6, path: `${home}/.bun/x/skills/two/SKILL.md`, kind: "file", status: "shadowed", reason: "같은 이름이 먼저 들어옴", scope: "omo 플러그인" },
+		{ id: "v", rank: 7, path: "builtin:mcp", kind: "virtual", status: "loaded", reason: "내장 확장" },
+	];
+	const categories: Category[] = [
+		{ id: "skills", label: "스킬", probes },
+		{ id: "rules", label: "규칙", probes: [{ id: "e", rank: 1, path: "builtin:x", kind: "virtual", status: "error", reason: "읽지 못함" }] },
+	];
+	return { ...report, categories };
+}
+
+const rightOf = (line: string | undefined): string => (line?.split("│")[1] ?? "").replace(/^ /, "").trimEnd();
+const leftOf = (line: string | undefined): string => (line?.split("│")[0] ?? "").trim();
+
+test("folder rows: unnumbered folder lines, rows named inside them, implied folder for shared parents, blank lines around groups, no repeated status words", () => {
+	const { report } = buildFixture();
+	const lines = renderPanes(groupedReport(report), view({ pane: "cats" }), 120, 20, plainTheme);
+	expect(lines.slice(4, 15).map(rightOf)).toEqual([
+		"./.omo/skills  프로젝트",
+		"  1. alpha",
+		`  2. beta  ${LINK_LABEL} · 같은 파일(링크)로 이미 들어옴`,
+		"",
+		"./.pi/skills  폴더 없음",
+		"",
+		"~/.bun/x/skills  omo 플러그인",
+		"  3. one",
+		`  4. two  ${STATUS_LABEL.shadowed} · 같은 이름이 먼저 들어옴`,
+		"",
+		"5. builtin:mcp  내장 확장",
+	]);
+});
+
+test("missing folders: a missing ancestor holds nothing, and a missing folder line is reused for the rows inside it", () => {
+	const { report } = buildFixture();
+	const cwd = report.cwd;
+	const probes: Probe[] = [
+		{ id: "up", rank: 1, path: `${cwd}/a`, kind: "dir", status: "missing", reason: "후보 파일 없음" },
+		{ id: "down", rank: 2, path: `${cwd}/a/b`, kind: "dir", status: "missing", reason: "후보 파일 없음" },
+		{ id: "cfg", rank: 3, path: `${cwd}/.omo`, kind: "dir", status: "missing", reason: "설정 파일 없음" },
+		{ id: "x", rank: 4, path: `${cwd}/.omo/settings.jsonc`, kind: "file", status: "missing", reason: "파일 없음" },
+		{ id: "y", rank: 5, path: `${cwd}/.omo/settings.json`, kind: "file", status: "missing", reason: "파일 없음" },
+	];
+	const settings: Report = { ...report, categories: [{ id: "settings", label: "설정", probes }] };
+	const lines = renderPanes(settings, view({ pane: "cats" }), 120, 16, plainTheme);
+	expect(lines.slice(4, 10).map(rightOf)).toEqual(["./a  후보 파일 없음", "./a/b  후보 파일 없음", "", "./.omo  설정 파일 없음", "  1. settings.jsonc  파일 없음", "  2. settings.json  파일 없음"]);
+});
+
+test("virtual pieces: <root>:<piece> rows sit under their root, file rows after a piece sit under that piece", () => {
+	const { report } = buildFixture();
+	const probes: Probe[] = [
+		{ id: "all", rank: 1, path: "system-prompt", kind: "virtual", status: "loaded", reason: "전체" },
+		{ id: "ctx", rank: 2, path: "system-prompt:지침 파일 묶음", kind: "virtual", status: "loaded", reason: "10자" },
+		{ id: "f1", rank: 3, path: `${report.cwd}/AGENTS.md`, kind: "file", status: "loaded", reason: "지침 파일" },
+		{ id: "sk", rank: 4, path: "system-prompt:스킬 목록", kind: "virtual", status: "loaded", reason: "20자" },
+	];
+	const prompt: Report = { ...report, categories: [{ id: "prompt", label: "시스템 프롬프트", probes }] };
+	const lines = renderPanes(prompt, view({ pane: "cats" }), 120, 14, plainTheme);
+	expect(lines.slice(4, 8).map(rightOf)).toEqual(["1. system-prompt  전체", "  2. 지침 파일 묶음  10자", "    3. ./AGENTS.md  지침 파일", "  4. 스킬 목록  20자"]);
+});
+
+test("folder rows: the selected probe is highlighted on its own line, folder lines included", () => {
+	const { report } = buildFixture();
+	const grouped = groupedReport(report);
+	const onRow = (row: number): string[] => {
+		const spy = spyTheme();
+		renderPanes(grouped, view({ pane: "rows", row }), 120, 14, spy.theme);
+		return spy.fgCalls.filter((call) => call.color === "accent").map((call) => call.text);
+	};
+	expect(onRow(4).some((text) => text.includes("3. one"))).toBe(true);
+	expect(onRow(3).some((text) => text.includes("./.pi/skills"))).toBe(true);
+});
+
+test("left counts: only categories with problems show a number", () => {
+	const { report } = buildFixture();
+	const lines = renderPanes(groupedReport(report), view({ pane: "cats" }), 120, 14, plainTheme);
+	expect(leftOf(lines[2])).toBe("스킬");
+	expect(leftOf(lines[3])).toMatch(/^규칙 +1$/);
 });
 
 test("narrow widths keep q 닫기 visible in the list footer", () => {
