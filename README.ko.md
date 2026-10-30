@@ -37,17 +37,11 @@ Enter를 누르면 읽기 전용 보기 화면이 열립니다. 아래 줄은 `�
 
 ## 설치
 
-클론한 폴더에서:
-
-```powershell
-.\install.ps1
-```
-
 ```sh
-sh install.sh
+omo install git:github.com/yjacket/omo-where
 ```
 
-그다음 실행 중인 세션에서 `/reload`를 칩니다. 스크립트는 `extension/omo-where/`를 `<agentDir>/extensions/omo-where`로 복사합니다. agentDir은 `OMO_CODING_AGENT_DIR`, `SENPI_CODING_AGENT_DIR`, `PI_CODING_AGENT_DIR` 중 처음 설정된 값이고, 없으면 `~/.omo/agent`입니다. 먼저 `omo-where.tmp-<pid>` 폴더에 복사하고, 옛 사본을 지운 뒤 이름을 바꾸므로 핫 리로드가 반쯤 복사된 폴더를 보지 않습니다. 아무것도 내려받지 않습니다.
+git으로 설치한 확장을 모두 업데이트하려면 `omo update --extensions`, 이것만 하려면 `omo update --extension git:github.com/yjacket/omo-where`를 실행합니다. 실행 중인 세션은 `/reload` 뒤나 새 세션에서 바뀐 내용을 씁니다.
 
 ## 키
 
@@ -122,11 +116,20 @@ Windows 11, Bun 1.4.2에서 @code-yeongyu/senpi 2026.10.10, omo-ai 5.1.19로 시
 
 ## 개발
 
+git worktree에서 브랜치를 만들어 작업하고 `master`로 PR을 엽니다. 기본 브랜치는 `test` 검사를 통과한 PR로만 바뀌고, 직접 push, force push, 브랜치 삭제는 막혀 있습니다. `test` 워크플로는 windows-latest에서 omo-ai를 설치해 parity 테스트가 실제 엔진으로 돌게 한 뒤 `bun run test`를 실행합니다.
+
+로컬에서 테스트 돌리기:
+
 ```sh
 bun test
+bun test -t "<이름 일부>"
 ```
 
 테스트에는 설치된 하네스 함수를 시험 폴더에 돌려 줄과 맞춰 보는 parity 테스트가 들어 있습니다. Bun 1.4 이상이 필요하고, 빌드 단계와 npm 의존성은 없습니다.
+
+작업 중인 사본을 omo에서 써 보려면 경로로 설치하거나(`omo install <클론 경로>`) `.\install.ps1` / `sh install.sh`를 실행합니다. 스크립트는 `extension/omo-where/`를 `<agentDir>/extensions/omo-where`로 복사합니다. 둘 다 개발 확인용이고, 끝나면 git 설치로 되돌립니다.
+
+라이브 테스트는 실제 설정을 건드리지 않게 합니다. omo는 실행 중인 모든 세션에서 설정을 핫 리로드하므로, 테스트용 omo를 띄우기 전에 `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`와 `OMO_CODING_AGENT_DIR`(또는 `SENPI_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR`)을 임시 폴더로 돌립니다.
 
 `qa/tui-qa.mjs`는 이 확장과 `qa/dump-ctx.ts`를 붙여 omo를 가상 터미널에서 띄우고, JSON 단계 목록을 따라 움직인 뒤 헤드리스 Chrome의 xterm.js로 `.png`, `.ansi`, `.txt`를 저장합니다.
 
@@ -134,7 +137,7 @@ bun test
 bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps qa/steps/smoke.json --out .omo/evidence/smoke
 ```
 
-단계: `wait`, `waitNew`(마지막 키 입력 뒤 출력만), `idle`, `send`, `shot`, `mark`, `rm`. 슬래시 명령은 입력한 뒤 자동완성 줄을 `waitNew`로 기다렸다가 Enter를 보냅니다. 너무 이른 Enter는 에이전트에게 프롬프트로 갈 수 있습니다.
+단계: `wait`, `waitNew`(마지막 키 입력 뒤 출력만), `idle`, `send`, `shot`, `mark`, `rm`. 슬래시 명령은 입력한 뒤 자동완성 줄을 `waitNew`로 기다렸다가 Enter를 보냅니다. 너무 이른 Enter는 에이전트에게 프롬프트로 갈 수 있습니다. `.omo/` 아래 캡처는 임시 파일이라 커밋하지 않습니다.
 
 ## 라이선스
 
