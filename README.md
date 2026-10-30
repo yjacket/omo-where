@@ -37,17 +37,11 @@ Enter opens a row in a read-only viewer. Its footer reads `↑↓ PgUp/PgDn 스�
 
 ## Install
 
-From a clone:
-
-```powershell
-.\install.ps1
-```
-
 ```sh
-sh install.sh
+omo install git:github.com/yjacket/omo-where
 ```
 
-Then type `/reload` in a running session. The scripts copy `extension/omo-where/` into `<agentDir>/extensions/omo-where`, where agentDir is the first set of `OMO_CODING_AGENT_DIR`, `SENPI_CODING_AGENT_DIR`, `PI_CODING_AGENT_DIR`, else `~/.omo/agent`. They copy to a `omo-where.tmp-<pid>` folder first, remove the old copy, then rename, so hot reload never sees half a tree. Nothing is downloaded.
+Update every git-installed extension with `omo update --extensions`, or just this one with `omo update --extension git:github.com/yjacket/omo-where`. Running sessions pick up the change after `/reload` or in a new session.
 
 ## Keys
 
@@ -122,11 +116,20 @@ The 시스템 프롬프트 category shows the session's base prompt. Text that o
 
 ## Development
 
+Work in a git worktree on a branch and open a pull request against `master`. The default branch only takes changes through a PR whose `test` check passes; direct pushes, force pushes and branch deletion are blocked. The `test` workflow runs on windows-latest, installs omo-ai so the parity tests run against the real engine, and runs `bun run test`.
+
+Run the tests locally:
+
 ```sh
 bun test
+bun test -t "<name substring>"
 ```
 
 The suite includes parity tests that run the installed harness functions on fixture folders and check the rows against them. Requires Bun >= 1.4. No build step and no npm dependencies.
+
+To try a working copy in omo, install it from its path (`omo install <path-to-clone>`) or run `.\install.ps1` / `sh install.sh`, which copy `extension/omo-where/` into `<agentDir>/extensions/omo-where`. Both are for development checks only. Switch back to the git install afterwards.
+
+Keep live tests away from your real setup. omo hot-reloads settings in every running session, so point `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and `OMO_CODING_AGENT_DIR` (or `SENPI_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR`) at a temporary folder before starting omo for a test.
 
 `qa/tui-qa.mjs` runs omo in a pseudo-terminal with this extension and `qa/dump-ctx.ts`, follows a JSON step list and saves `.png`, `.ansi` and `.txt` captures through xterm.js in headless Chrome:
 
@@ -134,7 +137,7 @@ The suite includes parity tests that run the installed harness functions on fixt
 bun qa/tui-qa.mjs --cwd <dir> --cols 150 --rows 45 --steps qa/steps/smoke.json --out .omo/evidence/smoke
 ```
 
-Steps: `wait`, `waitNew` (only output after the last keypress), `idle`, `send`, `shot`, `mark`, `rm`. Type a slash command, `waitNew` for its autocomplete line, then send Enter; an early Enter can reach the agent as a prompt.
+Steps: `wait`, `waitNew` (only output after the last keypress), `idle`, `send`, `shot`, `mark`, `rm`. Type a slash command, `waitNew` for its autocomplete line, then send Enter; an early Enter can reach the agent as a prompt. Captures under `.omo/` are scratch and don't get committed.
 
 ## License
 

@@ -30,10 +30,9 @@ omo-where is an OMO/Senpi TUI extension. `/where` opens an overlay that lists ev
 ```sh
 bun test
 bun test -t "<name substring>"
-sh install.sh   |   .\install.ps1
 ```
 
-Install scripts are local-copy only: agentDir = OMO_CODING_AGENT_DIR > SENPI_CODING_AGENT_DIR > PI_CODING_AGENT_DIR > ~/.omo/agent; copy to `extensions/omo-where.tmp-<pid>`, remove the old folder, rename into place, print `installed -> <dst>`.
+Users install with `omo install git:github.com/yjacket/omo-where` and update with `omo update --extensions`. `sh install.sh` / `.\install.ps1` are for development checks only (switch back to the git install afterwards). They copy locally, no download: agentDir = OMO_CODING_AGENT_DIR > SENPI_CODING_AGENT_DIR > PI_CODING_AGENT_DIR > ~/.omo/agent; copy to `extensions/omo-where.tmp-<pid>`, remove the old folder, rename into place, print `installed -> <dst>`.
 
 ## Testing
 
@@ -48,6 +47,10 @@ Install scripts are local-copy only: agentDir = OMO_CODING_AGENT_DIR > SENPI_COD
 - Check: `/where` opens, ↑↓←→ Enter Esc q work, every category renders, `w` jumps to the winner, `e` with `--editor "bun qa/fake-editor.mjs"` logs the path and leaves the file unchanged, no `TypeError`/`stale extension generation` text in any `.ansi`.
 - omo itself rewrites `tipsHistory` in settings.json on every start; compare settings hashes around the /where code path, not around a whole omo session.
 - Deleting resource files mid-session triggers omo's own reload, which closes the overlay.
+
+## Workflow
+
+Work in a worktree branch and land changes through a PR; the `test` check (windows-latest, installs omo-ai, `bun run test`) must pass. Live tests use a temporary HOME/USERPROFILE/APPDATA/LOCALAPPDATA and agent dir, never the real ~/.omo. Don't commit `.omo/` scratch.
 
 ## Commits
 
